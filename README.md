@@ -1,8 +1,8 @@
 # Local LLM Console
 
-Local LLM Console is a local-model-focused Codex Desktop fork for Linux.
+Local LLM Console is a standalone Linux desktop app for local LLMs with a Codex Desktop-derived UI and a self-bootstrapping install flow.
 
-This repository bootstraps and builds its own local app. It includes the Local LLM Console launchers, patched webview, desktop integration files, icon assets, an X11 title fix, a local model catalog, and the scripts needed to generate `codex-app/` locally from upstream assets.
+This repository includes the Local LLM Console launchers, patched webview, desktop integration files, icon assets, an X11 title fix, a local model catalog, and the scripts needed to generate `codex-app/` locally from upstream assets.
 
 ## What This Repo Is
 
