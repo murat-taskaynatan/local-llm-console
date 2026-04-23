@@ -2,7 +2,7 @@
 
 Local LLM Console is a local-model-focused Codex Desktop fork layer for Linux.
 
-This repository is not the full upstream Electron app. It is the extracted Local LLM Console customization layer: local launchers, a patched local webview, desktop integration files, icon assets, an X11 title fix, and a local model catalog for Ollama-backed models such as `gpt-oss:120b`, `qwen3.5:9.7b`, and `qwen3.5:122b`.
+This repository is not the full upstream Electron app. It is the extracted Local LLM Console customization layer: local launchers, a patched local webview, desktop integration files, icon assets, an X11 title fix, and a local model catalog for Ollama-backed local models.
 
 ## What This Repo Is
 
@@ -78,11 +78,7 @@ The desktop file expects `local-ai-console-launch` to be available on `PATH`.
 
 ## Models
 
-The included local model catalog is configured for:
-
-- `gpt-oss:120b`
-- `qwen3.5:9.7b`
-- `qwen3.5:122b`
+The included local model catalog is configured for local Ollama models.
 
 The CLI wrapper uses Ollama:
 
