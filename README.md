@@ -13,7 +13,6 @@ This repository includes the Local LLM Console launchers, patched webview, deskt
 
 ## What This Repo Is Not
 
-- Not the full upstream `codex-desktop-linux` source tree
 - Not an OpenAI-hosted Codex cloud client
 
 No preinstalled Codex Desktop base app is required. Run the installer in this repo and it will build the local app into `codex-app/`.
