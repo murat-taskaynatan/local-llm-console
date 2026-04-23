@@ -15,8 +15,6 @@ This repository includes the Local LLM Console launchers, patched webview, deskt
 
 - Not an OpenAI-hosted Codex cloud client
 
-No preinstalled Codex Desktop base app is required. Run the installer in this repo and it will build the local app into `codex-app/`.
-
 ## Included
 
 - `codex-app/start-local.sh`
