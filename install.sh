@@ -344,15 +344,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WEBVIEW_DIR="$SCRIPT_DIR/content/webview"
+ELECTRON_APP_PATH="${CODEX_DESKTOP_ELECTRON_APP_PATH:-$SCRIPT_DIR}"
 LOG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/codex-desktop"
 LOG_FILE="$LOG_DIR/launcher.log"
 APP_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/codex-desktop"
 APP_PID_FILE="$APP_STATE_DIR/app.pid"
 PACKAGED_RUNTIME_HELPER="$SCRIPT_DIR/.codex-linux/codex-packaged-runtime.sh"
-APP_NOTIFICATION_ICON_NAME="codex-desktop"
+APP_NOTIFICATION_ICON_NAME="${CODEX_DESKTOP_ICON_NAME:-codex-desktop}"
 APP_NOTIFICATION_ICON_BUNDLE="$SCRIPT_DIR/.codex-linux/$APP_NOTIFICATION_ICON_NAME.png"
 APP_NOTIFICATION_ICON_SYSTEM="/usr/share/icons/hicolor/256x256/apps/$APP_NOTIFICATION_ICON_NAME.png"
-APP_NOTIFICATION_ICON_REPO="$SCRIPT_DIR/../assets/codex.png"
+APP_NOTIFICATION_ICON_REPO="${CODEX_DESKTOP_ICON_REPO:-$SCRIPT_DIR/../assets/codex.png}"
 
 mkdir -p "$LOG_DIR" "$APP_STATE_DIR"
 
@@ -472,10 +473,10 @@ notify_error() {
     echo "$message"
     if command -v notify-send >/dev/null 2>&1; then
         notify-send \
-            -a "Codex Desktop" \
+            -a "${CODEX_DESKTOP_RUNTIME_NAME:-Codex Desktop}" \
             -i "$icon" \
-            -h "string:desktop-entry:codex-desktop" \
-            "Codex Desktop" \
+            -h "string:desktop-entry:${CODEX_DESKTOP_DESKTOP_ENTRY:-codex-desktop.desktop}" \
+            "${CODEX_DESKTOP_RUNTIME_NAME:-Codex Desktop}" \
             "$message"
     fi
 }
@@ -564,7 +565,7 @@ if [ -z "${CODEX_CLI_PATH:-}" ]; then
     CODEX_CLI_PATH="$(find_codex_cli || true)"
     export CODEX_CLI_PATH
 fi
-export CHROME_DESKTOP="${CHROME_DESKTOP:-codex-desktop.desktop}"
+export CHROME_DESKTOP="${CHROME_DESKTOP:-${CODEX_DESKTOP_DESKTOP_ENTRY:-codex-desktop.desktop}}"
 
 if [ -z "$CODEX_CLI_PATH" ]; then
     notify_error "Codex CLI not found. Install with: npm i -g @openai/codex or npm i -g --prefix ~/.local @openai/codex"
@@ -581,12 +582,13 @@ cd "$SCRIPT_DIR"
 echo "$$" > "$APP_PID_FILE"
 exec "$SCRIPT_DIR/electron" \
     --no-sandbox \
-    --class=codex-desktop \
-    --app-id=codex-desktop \
+    --class="${CODEX_DESKTOP_CLASS:-codex-desktop}" \
+    --app-id="${CODEX_DESKTOP_APP_ID:-codex-desktop}" \
     --ozone-platform-hint=auto \
     --disable-gpu-sandbox \
     --disable-gpu-compositing \
     --enable-features=WaylandWindowDecorations \
+    "$ELECTRON_APP_PATH" \
     "$@"
 SCRIPT
 

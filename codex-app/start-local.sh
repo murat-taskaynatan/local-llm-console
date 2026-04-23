@@ -6,7 +6,12 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BASE_APP_DIR="${CODEX_DESKTOP_BASE_APP_DIR:-$SCRIPT_DIR}"
 BASE_START_SCRIPT="${CODEX_DESKTOP_BASE_START_SCRIPT:-$BASE_APP_DIR/start.sh}"
 BASE_ELECTRON_PATH="${CODEX_DESKTOP_ELECTRON_PATH:-$BASE_APP_DIR/electron}"
-BASE_SOURCE_ASAR="${CODEX_DESKTOP_SOURCE_ASAR:-$BASE_APP_DIR/resources/app.asar}"
+BASE_RESOURCES_DIR="${CODEX_DESKTOP_RESOURCES_DIR:-$BASE_APP_DIR/resources}"
+BASE_SHELL_ASAR="${CODEX_DESKTOP_SHELL_ASAR:-$BASE_RESOURCES_DIR/app.asar}"
+BASE_SHELL_ASAR_UNPACKED="${BASE_SHELL_ASAR}.unpacked"
+BASE_UPSTREAM_SOURCE_ASAR="${CODEX_DESKTOP_UPSTREAM_SOURCE_ASAR:-$BASE_RESOURCES_DIR/upstream.app.asar}"
+BASE_UPSTREAM_SOURCE_ASAR_UNPACKED="${BASE_UPSTREAM_SOURCE_ASAR}.unpacked"
+BASE_SOURCE_ASAR="${CODEX_DESKTOP_SOURCE_ASAR:-}"
 USER_UID="$(id -u)"
 
 export CODEX_HOME="${CODEX_HOME:-$HOME/.codex-local-desktop}"
@@ -19,9 +24,9 @@ export CODEX_DESKTOP_ICON_NAME="${CODEX_DESKTOP_ICON_NAME:-local-ai-console-grad
 export CHROME_DESKTOP="${CHROME_DESKTOP:-local-ai-console.desktop}"
 export CODEX_DESKTOP_EXPECTED_TITLE="${CODEX_DESKTOP_EXPECTED_TITLE:-Local LLM Console}"
 export CODEX_DESKTOP_LOCAL_PROFILE_VERSION="${CODEX_DESKTOP_LOCAL_PROFILE_VERSION:-v10}"
-export CODEX_DESKTOP_LOCAL_RUNTIME_VERSION="${CODEX_DESKTOP_LOCAL_RUNTIME_VERSION:-v11}"
-export CODEX_DESKTOP_LOCAL_RUNTIME_PATCH_VERSION="${CODEX_DESKTOP_LOCAL_RUNTIME_PATCH_VERSION:-v2}"
-export CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION="${CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION:-v3}"
+export CODEX_DESKTOP_LOCAL_RUNTIME_VERSION="${CODEX_DESKTOP_LOCAL_RUNTIME_VERSION:-v14}"
+export CODEX_DESKTOP_LOCAL_RUNTIME_PATCH_VERSION="${CODEX_DESKTOP_LOCAL_RUNTIME_PATCH_VERSION:-v7}"
+export CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION="${CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION:-v6}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config/local-ai-console/xdg-config-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache/local-ai-console/xdg-cache-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}}"
 export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state/local-ai-console-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}}"
@@ -59,10 +64,30 @@ LOCAL_WEBVIEW_STAMP="${LOCAL_WEBVIEW_DIR}.stamp"
 LOCAL_RUNTIME_ROOT="${CODEX_DESKTOP_LOCAL_RUNTIME_ROOT:-$XDG_DATA_HOME/local-ai-console/runtime-${CODEX_DESKTOP_LOCAL_RUNTIME_VERSION}}"
 LOCAL_RUNTIME_APP_DIR="${CODEX_DESKTOP_LOCAL_RUNTIME_APP_DIR:-$LOCAL_RUNTIME_ROOT/app}"
 LOCAL_RUNTIME_STAMP="${LOCAL_RUNTIME_ROOT}/source-stamp.txt"
+LOCAL_SHELL_ASAR_STAMP="${LOCAL_RUNTIME_ROOT}/shell-asar-stamp.txt"
 LOCAL_RUNTIME_ICON_PATH="${CODEX_DESKTOP_WINDOW_ICON_PATH:-$REPO_ROOT/assets/local-ai-console-gradient.png}"
-LOCAL_SOURCE_ASAR="$BASE_SOURCE_ASAR"
+LOCAL_BOOTSTRAP_SOURCE_PATH="${CODEX_DESKTOP_LOCAL_BOOTSTRAP_SOURCE_PATH:-$REPO_ROOT/webview/assets/local-ai-console-bootstrap.js}"
+LOCAL_SOURCE_ASAR=""
 export CODEX_DESKTOP_POST_LAUNCH_HOOK="${CODEX_DESKTOP_POST_LAUNCH_HOOK:-$SCRIPT_DIR/.codex-linux/local-ai-console-x11-title-fix.sh}"
-mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$LOCAL_USER_DATA_DIR" "$(dirname "$LOCAL_WEBVIEW_DIR")" "$LOCAL_RUNTIME_ROOT"
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$LOCAL_USER_DATA_DIR" "$(dirname "$LOCAL_WEBVIEW_DIR")" "$LOCAL_RUNTIME_ROOT" "$BASE_RESOURCES_DIR"
+
+if [[ -f "$BASE_SHELL_ASAR" && ! -f "$BASE_UPSTREAM_SOURCE_ASAR" ]]; then
+    cp -p "$BASE_SHELL_ASAR" "$BASE_UPSTREAM_SOURCE_ASAR"
+fi
+
+if [[ -d "$BASE_SHELL_ASAR_UNPACKED" && ! -d "$BASE_UPSTREAM_SOURCE_ASAR_UNPACKED" ]]; then
+    cp -a "$BASE_SHELL_ASAR_UNPACKED" "$BASE_UPSTREAM_SOURCE_ASAR_UNPACKED"
+fi
+
+if [[ -z "$BASE_SOURCE_ASAR" ]]; then
+    if [[ -f "$BASE_UPSTREAM_SOURCE_ASAR" ]]; then
+        BASE_SOURCE_ASAR="$BASE_UPSTREAM_SOURCE_ASAR"
+    else
+        BASE_SOURCE_ASAR="$BASE_SHELL_ASAR"
+    fi
+fi
+
+LOCAL_SOURCE_ASAR="$BASE_SOURCE_ASAR"
 
 if [[ ! -f "$BASE_START_SCRIPT" ]]; then
     echo "Missing generated base runtime in $BASE_APP_DIR." >&2
@@ -113,7 +138,7 @@ terminate_stale_local_runtime_processes() {
     fi
 }
 
-LOCAL_SOURCE_FINGERPRINT="$(stat -c '%Y:%s' "$LOCAL_SOURCE_ASAR")|${CODEX_DESKTOP_LOCAL_RUNTIME_VERSION}|${CODEX_DESKTOP_LOCAL_RUNTIME_PATCH_VERSION}"
+LOCAL_SOURCE_FINGERPRINT="$(stat -c '%Y:%s' "$LOCAL_SOURCE_ASAR")|$(stat -c '%Y:%s' "$SCRIPT_DIR/start-local.sh")|$(stat -c '%Y:%s' "$LOCAL_BOOTSTRAP_SOURCE_PATH")|${CODEX_DESKTOP_LOCAL_RUNTIME_VERSION}|${CODEX_DESKTOP_LOCAL_RUNTIME_PATCH_VERSION}"
 LOCAL_RUNTIME_NEEDS_REBUILD=1
 if [[ -d "$LOCAL_RUNTIME_APP_DIR" && -f "$LOCAL_RUNTIME_STAMP" ]]; then
     if [[ "$(<"$LOCAL_RUNTIME_STAMP")" == "$LOCAL_SOURCE_FINGERPRINT" ]]; then
@@ -124,21 +149,35 @@ fi
 if [[ "$LOCAL_RUNTIME_NEEDS_REBUILD" -eq 1 ]]; then
     rm -rf "$LOCAL_RUNTIME_APP_DIR"
     npx --yes asar extract "$LOCAL_SOURCE_ASAR" "$LOCAL_RUNTIME_APP_DIR"
-    LOCAL_RUNTIME_APP_DIR="$LOCAL_RUNTIME_APP_DIR" LOCAL_RUNTIME_ICON_PATH="$LOCAL_RUNTIME_ICON_PATH" python3 - <<'PY'
+    LOCAL_RUNTIME_APP_DIR="$LOCAL_RUNTIME_APP_DIR" LOCAL_RUNTIME_ICON_PATH="$LOCAL_RUNTIME_ICON_PATH" LOCAL_BOOTSTRAP_SOURCE_PATH="$LOCAL_BOOTSTRAP_SOURCE_PATH" python3 - <<'PY'
 from pathlib import Path
 import json
 import os
+import re
 
 root = Path(os.environ["LOCAL_RUNTIME_APP_DIR"])
 
 
 def replace_once(path: Path, original: str, patched: str, *, error_message: str) -> None:
     text = path.read_text()
-    if patched in text:
-        return
     if original not in text:
         raise SystemExit(error_message)
     path.write_text(text.replace(original, patched, 1))
+
+
+def replace_optional(path: Path, original: str, patched: str) -> None:
+    text = path.read_text()
+    if original not in text:
+        return
+    path.write_text(text.replace(original, patched, 1))
+
+
+def rewrite_locale_message(path: Path, key: str, value: str) -> None:
+    text = path.read_text()
+    pattern = rf'("{re.escape(key)}":`)([^`]*)`'
+    patched_text, count = re.subn(pattern, rf"\1{value}`", text)
+    if count:
+        path.write_text(patched_text)
 
 
 package_json = root / "package.json"
@@ -153,16 +192,34 @@ bootstrap_bundle = root / ".vite" / "build" / "bootstrap.js"
 replace_once(
     bootstrap_bundle,
     "t.app.setName(e.Xr(b))",
-    "t.app.setName(process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||e.Xr(b))",
+    "t.app.setName(`Local LLM Console`)",
     error_message="Local desktop runtime patch failed: bootstrap app name snippet not found",
+)
+replace_once(
+    bootstrap_bundle,
+    "message:`${t.app.getName()} failed to start.`",
+    "message:`Local LLM Console failed to start.`",
+    error_message="Local desktop runtime patch failed: bootstrap startup failure message snippet not found",
+)
+replace_once(
+    bootstrap_bundle,
+    "if(!await p({appName:t.app.getName(),environment:{arch:process.arch,isPackaged:t.app.isPackaged,platform:process.platform}})){t.app.quit();return}",
+    "if(!await p({appName:`Local LLM Console`,environment:{arch:process.arch,isPackaged:t.app.isPackaged,platform:process.platform}})){t.app.quit();return}",
+    error_message="Local desktop runtime patch failed: bootstrap app-name handoff snippet not found",
 )
 
 main_bundle = root / ".vite" / "build" / "main-C8I_nqq_.js"
 replace_once(
     main_bundle,
     "function dr(){return`Codex Desktop/${t.app.getVersion()} (${process.platform}; ${process.arch})`}",
-    "function dr(){let e=process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`;return`${e}/${t.app.getVersion()} (${process.platform}; ${process.arch})`}",
+    "function dr(){return`Local LLM Console/${t.app.getVersion()} (${process.platform}; ${process.arch})`}",
     error_message="Local desktop runtime patch failed: desktop user-agent title snippet not found",
+)
+replace_once(
+    main_bundle,
+    "appName:t.app.getName()",
+    "appName:`Local LLM Console`",
+    error_message="Local desktop runtime patch failed: extension-info app name snippet not found",
 )
 replace_once(
     main_bundle,
@@ -179,44 +236,40 @@ replace_once(
 replace_once(
     main_bundle,
     "clientInfo:{name:hn,title:`Codex Desktop`,version:u}",
-    "clientInfo:{name:hn,title:process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`,version:u}",
+    "clientInfo:{name:hn,title:`Local LLM Console`,version:u}",
     error_message="Local desktop runtime patch failed: app-server client title snippet not found",
 )
 replace_once(
     main_bundle,
     "title:i??t.app.getName()",
-    "title:process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`",
+    "title:`Local LLM Console`",
     error_message="Local desktop runtime patch failed: window title snippet not found",
 )
-replace_once(
+replace_optional(
     main_bundle,
     "title:i??(process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||t.app.getName())",
-    "title:process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`",
-    error_message="Local desktop runtime patch failed: patched window title snippet not found",
+    "title:`Local LLM Console`",
 )
 replace_once(
     main_bundle,
     "hn=`Codex Desktop`",
-    "hn=process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`",
+    "hn=`Local LLM Console`",
     error_message="Local desktop runtime patch failed: runtime client title constant not found",
 )
-replace_once(
+replace_optional(
     main_bundle,
     "title:`Codex Desktop`",
-    "title:process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`",
-    error_message="Local desktop runtime patch failed: runtime client info title not found",
+    "title:`Local LLM Console`",
 )
-replace_once(
+replace_optional(
     main_bundle,
     "<title>Codex</title>",
     "<title>Local LLM Console</title>",
-    error_message="Local desktop runtime patch failed: inline fallback HTML title not found",
 )
-replace_once(
+replace_optional(
     main_bundle,
     "title:`Codex Debug`",
     "title:`Local LLM Console Debug`",
-    error_message="Local desktop runtime patch failed: debug window title not found",
 )
 replace_once(
     main_bundle,
@@ -227,38 +280,98 @@ replace_once(
 replace_once(
     main_bundle,
     "webPreferences:T}),k=O.webContents",
-    "webPreferences:T}),O.setTitle(process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`),O.on(`page-title-updated`,e=>{e.preventDefault(),O.isDestroyed()||O.setTitle(process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`)}),k=O.webContents",
+    "webPreferences:T});O.setTitle(`Local LLM Console`);O.on(`page-title-updated`,e=>{e.preventDefault(),O.isDestroyed()||O.setTitle(`Local LLM Console`)});let k=O.webContents",
     error_message="Local desktop runtime patch failed: page-title override snippet not found",
 )
 replace_once(
     main_bundle,
     "O.once(`ready-to-show`,()=>{vy().info(`window ready-to-show`,{safe:{hostId:d,windowId:O.id,webContentsId:O.webContents.id,appearance:c,startupElapsedMs:Date.now()-m}})})",
-    "O.once(`ready-to-show`,()=>{O.setTitle(process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`),vy().info(`window ready-to-show`,{safe:{hostId:d,windowId:O.id,webContentsId:O.webContents.id,appearance:c,startupElapsedMs:Date.now()-m}})})",
+    "O.once(`ready-to-show`,()=>{O.setTitle(`Local LLM Console`),vy().info(`window ready-to-show`,{safe:{hostId:d,windowId:O.id,webContentsId:O.webContents.id,appearance:c,startupElapsedMs:Date.now()-m}})})",
     error_message="Local desktop runtime patch failed: ready-to-show title hook snippet not found",
 )
 replace_once(
     main_bundle,
     "function Cg(e){let n=t.Menu.buildFromTemplate([{role:`quit`}]);return(Array.isArray(n)?n:n.items)[0]?.label??`Quit ${e}`}",
-    "function Cg(e){let n=process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||e,r=t.Menu.buildFromTemplate([{role:`quit`}]);return(Array.isArray(r)?r:r.items)[0]?.label?.replace(`Codex Desktop`,n).replace(`Codex`,n)??`Quit ${n}`}",
+    "function Cg(e){let n=`Local LLM Console`,r=t.Menu.buildFromTemplate([{role:`quit`}]);return(Array.isArray(r)?r:r.items)[0]?.label?.replace(`Codex Desktop`,n).replace(`Codex`,n)??`Quit ${n}`}",
     error_message="Local desktop runtime patch failed: tray quit label snippet not found",
 )
 replace_once(
     main_bundle,
     "let o=t.app.getName();if(t.dialog.showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`],defaultId:0,cancelId:1,noLink:!0,title:`Quit ${o}?`,message:`Quit ${o}?`,detail:`Any local threads running on this machine will be interrupted and scheduled automations won't run`})!==0)",
-    "let o=process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`;if(t.dialog.showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`],defaultId:0,cancelId:1,noLink:!0,title:`Quit ${o}?`,message:`Quit ${o}?`,detail:`Any local threads running on this machine will be interrupted and scheduled automations won't run`})!==0)",
+    "let o=`Local LLM Console`;if(t.dialog.showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`],defaultId:0,cancelId:1,noLink:!0,title:`Quit ${o}?`,message:``,detail:`Any local threads running on this machine will be interrupted and scheduled automations won't run`})!==0)",
     error_message="Local desktop runtime patch failed: quit confirmation title snippet not found",
 )
 replace_once(
     main_bundle,
     "updateOverlayTitle(e,n){e.window.isDestroyed()||e.window.setTitle(n??t.app.getName())}",
-    "updateOverlayTitle(e,n){e.window.isDestroyed()||e.window.setTitle(process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`)}",
+    "updateOverlayTitle(e,n){e.window.isDestroyed()||e.window.setTitle(`Local LLM Console`)}",
     error_message="Local desktop runtime patch failed: overlay title updater snippet not found",
 )
 replace_once(
     main_bundle,
     "updateTitle(e,t){if(e.window.isDestroyed())return;let n=j_(t);e.window.setTitle(n)}",
-    "updateTitle(e,t){if(e.window.isDestroyed())return;e.window.setTitle(process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`)}",
+    "updateTitle(e,t){if(e.window.isDestroyed())return;e.window.setTitle(`Local LLM Console`)}",
     error_message="Local desktop runtime patch failed: hotkey window title updater snippet not found",
+)
+replace_once(
+    main_bundle,
+    "label:`About ${t.app.getName()}`",
+    "label:`About Local LLM Console`",
+    error_message="Local desktop runtime patch failed: about menu label snippet not found",
+)
+replace_once(
+    main_bundle,
+    "let e=t.app.getName();if(typeof t.app.showAboutPanel==`function`)",
+    "let e=`Local LLM Console`;if(typeof t.app.showAboutPanel==`function`)",
+    error_message="Local desktop runtime patch failed: about panel title snippet not found",
+)
+replace_once(
+    main_bundle,
+    "title:t.app.getName(),width:c_,height:l_,appearance:`avatarOverlay`",
+    "title:`Local LLM Console`,width:c_,height:l_,appearance:`avatarOverlay`",
+    error_message="Local desktop runtime patch failed: avatar overlay title snippet not found",
+)
+replace_once(
+    main_bundle,
+    "title:t.app.getName(),width:E_,height:D_,appearance:`controlOverlay`",
+    "title:`Local LLM Console`,width:E_,height:D_,appearance:`controlOverlay`",
+    error_message="Local desktop runtime patch failed: control overlay title snippet not found",
+)
+replace_once(
+    main_bundle,
+    "title:t.app.getName(),width:N_,height:P_,appearance:`hotkeyWindowHome`",
+    "title:`Local LLM Console`,width:N_,height:P_,appearance:`hotkeyWindowHome`",
+    error_message="Local desktop runtime patch failed: hotkey home title snippet not found",
+)
+replace_once(
+    main_bundle,
+    "title:t.app.getName(),width:this.threadSize.width,height:this.threadSize.height,appearance:`hotkeyWindowThread`",
+    "title:`Local LLM Console`,width:this.threadSize.width,height:this.threadSize.height,appearance:`hotkeyWindowThread`",
+    error_message="Local desktop runtime patch failed: hotkey thread title snippet not found",
+)
+replace_once(
+    main_bundle,
+    "title:n.title??t.app.getName(),width:tv,height:nv,appearance:`hud`",
+    "title:n.title??`Local LLM Console`,width:tv,height:nv,appearance:`hud`",
+    error_message="Local desktop runtime patch failed: hud title snippet not found",
+)
+replace_once(
+    main_bundle,
+    "let a=i.kind===`local`?t.app.getName():i.display_name,o=await S.createPrimaryWindow({title:a,hostId:i.id,show:n});",
+    "let a=i.kind===`local`?`Local LLM Console`:i.display_name,o=await S.createPrimaryWindow({title:a,hostId:i.id,show:n});",
+    error_message="Local desktop runtime patch failed: primary window title selection snippet not found",
+)
+replace_once(
+    main_bundle,
+    "r.setToolTip(t.app.getName())",
+    "r.setToolTip(`Local LLM Console`)",
+    error_message="Local desktop runtime patch failed: tray tooltip snippet not found",
+)
+replace_once(
+    main_bundle,
+    "toggleChronicleSidecar,e.A(),t.app.getName())",
+    "toggleChronicleSidecar,e.A(),`Local LLM Console`)",
+    error_message="Local desktop runtime patch failed: tray app name snippet not found",
 )
 
 runtime_webview_index = root / "webview" / "index.html"
@@ -273,6 +386,24 @@ runtime_index_bundle = next((root / "webview" / "assets").glob("index-*.js"), No
 if runtime_index_bundle is None:
     raise SystemExit("Local desktop runtime patch failed: runtime index bundle not found")
 
+replace_once(
+    runtime_index_bundle,
+    "(0,$.jsx)(oK,{}),R?.type===`cloud`?null:(0,$.jsx)(lK,{conversationId:K,hostId:te},K??`new-conversation`),(0,$.jsx)(_K,{conversationId:K})",
+    "(0,$.jsx)(oK,{}),(0,$.jsx)(_K,{conversationId:K})",
+    error_message="Local desktop runtime patch failed: memories slash command snippet not found",
+)
+replace_once(
+    runtime_index_bundle,
+    "xt&&(0,$.jsx)(gK,{conversationId:K,hostId:q.hostId}),",
+    "",
+    error_message="Local desktop runtime patch failed: personality slash command snippet not found",
+)
+replace_once(
+    runtime_index_bundle,
+    "Fn||st?(0,$.jsx)(RG,{cwd:On,roots:Mi,hostId:sr}):null,",
+    "",
+    error_message="Local desktop runtime patch failed: skills slash command group snippet not found",
+)
 replace_once(
     runtime_index_bundle,
     "De=n??(0,$.jsx)(yh,{tooltipContent:(0,$.jsx)(Y,{id:`codex.header.settingsTooltip`,defaultMessage:`Settings`,description:`Tooltip text for opening settings`}),children:(0,$.jsx)(xp,{color:`ghost`,size:`icon`,children:(0,$.jsx)(Zm,{className:`icon-xs`})})})",
@@ -312,6 +443,7 @@ replace_once(
 
 runtime_webview_text = runtime_webview_index.read_text()
 runtime_settings_script_hash = "sha256-5k4JkxIm3KiM/KmfRx8pzEyLPiwx6uNO7fSyWH5bOsI="
+runtime_bootstrap_script_tag = '    <script src="./assets/local-ai-console-bootstrap.js"></script>\n'
 runtime_settings_script = """    <script>
       (() => {
         window.__openLocalSettings = () => {
@@ -385,6 +517,15 @@ if "src=\"./assets/local-ai-console-gradient.png\"" not in runtime_webview_text:
         1,
     )
 
+if "./assets/local-ai-console-bootstrap.js" not in runtime_webview_text:
+    if "</body>" not in runtime_webview_text:
+        raise SystemExit("Local desktop runtime patch failed: runtime webview body end snippet not found")
+    runtime_webview_text = runtime_webview_text.replace(
+        "</body>",
+        f"{runtime_bootstrap_script_tag}</body>",
+        1,
+    )
+
 if runtime_settings_script_hash not in runtime_webview_text:
     if runtime_settings_csp_original in runtime_webview_text:
         runtime_webview_text = runtime_webview_text.replace(
@@ -405,11 +546,14 @@ runtime_webview_index.write_text(runtime_webview_text)
 
 runtime_webview_assets = root / "webview" / "assets"
 runtime_icon_source = Path(os.environ["LOCAL_RUNTIME_ICON_PATH"])
+runtime_bootstrap_source = Path(os.environ["LOCAL_BOOTSTRAP_SOURCE_PATH"])
 runtime_icon_target = runtime_webview_assets / "local-ai-console-gradient.png"
 if runtime_icon_source.exists():
     runtime_icon_target.write_bytes(runtime_icon_source.read_bytes())
     packaged_runtime_icon_target = runtime_webview_assets / "app-D0g8sCle.png"
     packaged_runtime_icon_target.write_bytes(runtime_icon_source.read_bytes())
+if runtime_bootstrap_source.exists():
+    (runtime_webview_assets / "local-ai-console-bootstrap.js").write_bytes(runtime_bootstrap_source.read_bytes())
 
 runtime_loading_bundle = next(runtime_webview_assets.glob("loading-page-*.js"), None)
 if runtime_loading_bundle is None:
@@ -427,8 +571,35 @@ if "/assets/local-ai-console-gradient.png" not in runtime_loading_text:
         + runtime_loading_text[function_end:]
     )
     runtime_loading_bundle.write_text(runtime_loading_text)
+
+for asset_bundle in runtime_webview_assets.glob("*.js"):
+    rewrite_locale_message(asset_bundle, "threadOverlay.defaultTitle", "Local LLM Console")
+    rewrite_locale_message(asset_bundle, "hotkeyWindow.defaultTitle", "Local LLM Console")
+    rewrite_locale_message(asset_bundle, "appHeader.installUpdate.confirmTitle", "Update Local LLM Console now?")
+    rewrite_locale_message(asset_bundle, "appHeader.installUpdate.confirmSubtitle", "Local LLM Console will quit to install the update, interrupting any local threads running on this machine.")
+    rewrite_locale_message(asset_bundle, "appUpdate.installProgress.subtitle", "Local LLM Console will restart when installation finishes.")
+    rewrite_locale_message(asset_bundle, "appUpdate.recovery.updateCodex", "Update Local LLM Console")
+    rewrite_locale_message(asset_bundle, "codex.announcementModalStory.title", "")
+    rewrite_locale_message(asset_bundle, "codex.announcementModalStory.body", "")
+    rewrite_locale_message(asset_bundle, "codex.announcementModalStory.primary", "")
+    rewrite_locale_message(asset_bundle, "codex.announcementModalStory.dismiss", "")
 PY
     printf '%s' "$LOCAL_SOURCE_FINGERPRINT" > "$LOCAL_RUNTIME_STAMP"
+fi
+
+LOCAL_SHELL_ASAR_NEEDS_REBUILD=1
+if [[ -f "$BASE_SHELL_ASAR" && -f "$LOCAL_SHELL_ASAR_STAMP" ]]; then
+    if [[ "$(<"$LOCAL_SHELL_ASAR_STAMP")" == "$LOCAL_SOURCE_FINGERPRINT" ]]; then
+        LOCAL_SHELL_ASAR_NEEDS_REBUILD=0
+    fi
+fi
+
+if [[ "$LOCAL_SHELL_ASAR_NEEDS_REBUILD" -eq 1 ]]; then
+    TMP_SHELL_ASAR="${BASE_SHELL_ASAR}.tmp.$$"
+    rm -f "$TMP_SHELL_ASAR"
+    npx --yes asar pack "$LOCAL_RUNTIME_APP_DIR" "$TMP_SHELL_ASAR"
+    mv "$TMP_SHELL_ASAR" "$BASE_SHELL_ASAR"
+    printf '%s' "$LOCAL_SOURCE_FINGERPRINT" > "$LOCAL_SHELL_ASAR_STAMP"
 fi
 
 export CODEX_DESKTOP_RUNTIME_NAME="${CODEX_DESKTOP_RUNTIME_NAME:-Local LLM Console}"
@@ -441,6 +612,7 @@ SOURCE_WEBVIEW_DIR="$LOCAL_WEBVIEW_SOURCE_DIR"
 export CODEX_DESKTOP_WEBVIEW_DIR="$LOCAL_WEBVIEW_DIR"
 LOCAL_WEBVIEW_SOURCE_FINGERPRINT="$({
     find "$LOCAL_WEBVIEW_SOURCE_DIR" -type f -printf '%P:%s:%T@\n' | LC_ALL=C sort
+    printf 'launcher:%s\n' "$(stat -c '%Y:%s' "$SCRIPT_DIR/start-local.sh")"
     printf 'patch-version:%s\n' "$CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION"
 } | sha256sum | awk '{print $1}')"
 LOCAL_WEBVIEW_NEEDS_REBUILD=1
@@ -472,8 +644,6 @@ def patch_bundle(path: Path, replacements: list[tuple[str, str]], *, error_messa
     text = path.read_text()
     changed = False
     for original, patched in replacements:
-        if patched and patched in text:
-            continue
         if original not in text:
             continue
         text = text.replace(original, patched, 1)
@@ -486,8 +656,6 @@ def patch_text_file(path: Path, replacements: list[tuple[str, str]], *, error_me
     text = path.read_text()
     changed = False
     for original, patched in replacements:
-        if patched and patched in text:
-            continue
         if original not in text:
             continue
         text = text.replace(original, patched, 1)
@@ -771,6 +939,18 @@ patch_text_file(
     index_bundle,
     [
         (
+            "(0,$.jsx)(oK,{}),R?.type===`cloud`?null:(0,$.jsx)(lK,{conversationId:K,hostId:te},K??`new-conversation`),(0,$.jsx)(_K,{conversationId:K})",
+            "(0,$.jsx)(oK,{}),(0,$.jsx)(_K,{conversationId:K})",
+        ),
+        (
+            "xt&&(0,$.jsx)(gK,{conversationId:K,hostId:q.hostId}),",
+            "",
+        ),
+        (
+            "Fn||st?(0,$.jsx)(RG,{cwd:On,roots:Mi,hostId:sr}):null,",
+            "",
+        ),
+        (
             "De=n??(0,$.jsx)(yh,{tooltipContent:(0,$.jsx)(Y,{id:`codex.header.settingsTooltip`,defaultMessage:`Settings`,description:`Tooltip text for opening settings`}),children:(0,$.jsx)(xp,{color:`ghost`,size:`icon`,children:(0,$.jsx)(Zm,{className:`icon-xs`})})})",
             "De=n??(0,$.jsx)(yh,{tooltipContent:(0,$.jsx)(Y,{id:`codex.header.settingsTooltip`,defaultMessage:`Settings`,description:`Tooltip text for opening settings`}),children:(0,$.jsx)(xp,{color:`ghost`,size:`icon`,onClick:()=>{a(!1),o(`/settings/general-settings`,{state:W})},children:(0,$.jsx)(Zm,{className:`icon-xs`})})})",
         ),
@@ -857,6 +1037,14 @@ for asset_bundle in (target / "assets").glob("*.js"):
     rewrite_default_messages(asset_bundle, normalize_local_branding)
     rewrite_locale_message(asset_bundle, "threadOverlay.defaultTitle", "Local LLM Console")
     rewrite_locale_message(asset_bundle, "hotkeyWindow.defaultTitle", "Local LLM Console")
+    rewrite_locale_message(asset_bundle, "appHeader.installUpdate.confirmTitle", "Update Local LLM Console now?")
+    rewrite_locale_message(asset_bundle, "appHeader.installUpdate.confirmSubtitle", "Local LLM Console will quit to install the update, interrupting any local threads running on this machine.")
+    rewrite_locale_message(asset_bundle, "appUpdate.installProgress.subtitle", "Local LLM Console will restart when installation finishes.")
+    rewrite_locale_message(asset_bundle, "appUpdate.recovery.updateCodex", "Update Local LLM Console")
+    rewrite_locale_message(asset_bundle, "codex.announcementModalStory.title", "")
+    rewrite_locale_message(asset_bundle, "codex.announcementModalStory.body", "")
+    rewrite_locale_message(asset_bundle, "codex.announcementModalStory.primary", "")
+    rewrite_locale_message(asset_bundle, "codex.announcementModalStory.dismiss", "")
 
 font_bundle = next((target / "assets").glob("font-settings-*.js"), None)
 if font_bundle is None:
