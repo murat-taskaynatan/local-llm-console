@@ -1,0 +1,905 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+BASE_APP_DIR="${CODEX_DESKTOP_BASE_APP_DIR:-$SCRIPT_DIR}"
+BASE_START_SCRIPT="${CODEX_DESKTOP_BASE_START_SCRIPT:-$BASE_APP_DIR/start.sh}"
+BASE_ELECTRON_PATH="${CODEX_DESKTOP_ELECTRON_PATH:-$BASE_APP_DIR/electron}"
+BASE_SOURCE_ASAR="${CODEX_DESKTOP_SOURCE_ASAR:-$BASE_APP_DIR/resources/app.asar}"
+USER_UID="$(id -u)"
+
+export CODEX_HOME="${CODEX_HOME:-$HOME/.codex-local-desktop}"
+export CODEX_CLI_PATH="${CODEX_CLI_PATH:-$REPO_ROOT/launcher/codex-local-desktop-cli}"
+export CODEX_DESKTOP_APP_NAME="${CODEX_DESKTOP_APP_NAME:-local-ai-console}"
+export CODEX_DESKTOP_CLASS="${CODEX_DESKTOP_CLASS:-local-ai-console}"
+export CODEX_DESKTOP_APP_ID="${CODEX_DESKTOP_APP_ID:-local-ai-console}"
+export CODEX_DESKTOP_DESKTOP_ENTRY="${CODEX_DESKTOP_DESKTOP_ENTRY:-local-ai-console.desktop}"
+export CODEX_DESKTOP_ICON_NAME="${CODEX_DESKTOP_ICON_NAME:-local-ai-console-gradient}"
+export CHROME_DESKTOP="${CHROME_DESKTOP:-local-ai-console.desktop}"
+export CODEX_DESKTOP_EXPECTED_TITLE="${CODEX_DESKTOP_EXPECTED_TITLE:-Local LLM Console}"
+export CODEX_DESKTOP_LOCAL_PROFILE_VERSION="${CODEX_DESKTOP_LOCAL_PROFILE_VERSION:-v10}"
+export CODEX_DESKTOP_LOCAL_RUNTIME_VERSION="${CODEX_DESKTOP_LOCAL_RUNTIME_VERSION:-v10}"
+export CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION="${CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION:-v3}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config/local-ai-console/xdg-config-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache/local-ai-console/xdg-cache-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}}"
+export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state/local-ai-console-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${USER_UID}}"
+
+if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "${XDG_RUNTIME_DIR}/bus" ]]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+fi
+
+if [[ -z "${DISPLAY:-}" ]]; then
+    export DISPLAY=":0"
+fi
+
+if [[ -z "${XAUTHORITY:-}" ]]; then
+    for candidate in \
+        "${XDG_RUNTIME_DIR}/gdm/Xauthority" \
+        "$HOME/.Xauthority"
+    do
+        if [[ -f "$candidate" ]]; then
+            export XAUTHORITY="$candidate"
+            break
+        fi
+    done
+fi
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    exec "$BASE_START_SCRIPT" "$@"
+fi
+
+LOCAL_USER_DATA_DIR="${CODEX_DESKTOP_USER_DATA_DIR:-$XDG_CONFIG_HOME/LocalAIConsole}"
+LOCAL_WEBVIEW_SOURCE_DIR="${CODEX_DESKTOP_LOCAL_SOURCE_WEBVIEW_DIR:-$REPO_ROOT/webview}"
+LOCAL_WEBVIEW_DIR="${CODEX_DESKTOP_WEBVIEW_DIR:-$XDG_CACHE_HOME/webview-patched-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}}"
+LOCAL_WEBVIEW_STAMP="${LOCAL_WEBVIEW_DIR}.stamp"
+LOCAL_RUNTIME_ROOT="${CODEX_DESKTOP_LOCAL_RUNTIME_ROOT:-$XDG_DATA_HOME/local-ai-console/runtime-${CODEX_DESKTOP_LOCAL_RUNTIME_VERSION}}"
+LOCAL_RUNTIME_APP_DIR="${CODEX_DESKTOP_LOCAL_RUNTIME_APP_DIR:-$LOCAL_RUNTIME_ROOT/app}"
+LOCAL_RUNTIME_STAMP="${LOCAL_RUNTIME_ROOT}/source-stamp.txt"
+LOCAL_RUNTIME_ICON_PATH="${CODEX_DESKTOP_WINDOW_ICON_PATH:-$REPO_ROOT/assets/local-ai-console-gradient.png}"
+LOCAL_SOURCE_ASAR="$BASE_SOURCE_ASAR"
+export CODEX_DESKTOP_POST_LAUNCH_HOOK="${CODEX_DESKTOP_POST_LAUNCH_HOOK:-$SCRIPT_DIR/.codex-linux/local-ai-console-x11-title-fix.sh}"
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$LOCAL_USER_DATA_DIR" "$(dirname "$LOCAL_WEBVIEW_DIR")" "$LOCAL_RUNTIME_ROOT"
+
+if [[ ! -f "$BASE_START_SCRIPT" ]]; then
+    echo "Local LLM Console needs a Codex Desktop base install." >&2
+    echo "Set CODEX_DESKTOP_BASE_APP_DIR=/path/to/codex-app or place this overlay inside codex-app." >&2
+    exit 1
+fi
+
+if [[ ! -f "$LOCAL_SOURCE_ASAR" ]]; then
+    echo "Missing base runtime archive: $LOCAL_SOURCE_ASAR" >&2
+    echo "Set CODEX_DESKTOP_SOURCE_ASAR=/path/to/app.asar if your base install lives elsewhere." >&2
+    exit 1
+fi
+
+terminate_stale_local_runtime_processes() {
+    local current_runtime="$LOCAL_RUNTIME_APP_DIR"
+    local stale_pids=()
+    local pid=""
+    local cmd=""
+
+    while IFS= read -r line; do
+        pid="${line%% *}"
+        cmd="${line#* }"
+
+        [[ "$cmd" == *"--class=${CODEX_DESKTOP_CLASS}"* ]] || continue
+        [[ "$cmd" == *"$XDG_DATA_HOME/local-ai-console/runtime-"*"/app"* ]] || continue
+        [[ "$cmd" == *"$current_runtime"* ]] && continue
+
+        stale_pids+=("$pid")
+    done < <(pgrep -af "$BASE_ELECTRON_PATH" || true)
+
+    if [[ "${#stale_pids[@]}" -eq 0 ]]; then
+        return 0
+    fi
+
+    kill "${stale_pids[@]}" >/dev/null 2>&1 || true
+    sleep 0.5
+
+    local stubborn_pids=()
+    for pid in "${stale_pids[@]}"; do
+        if kill -0 "$pid" >/dev/null 2>&1; then
+            stubborn_pids+=("$pid")
+        fi
+    done
+
+    if [[ "${#stubborn_pids[@]}" -gt 0 ]]; then
+        kill -9 "${stubborn_pids[@]}" >/dev/null 2>&1 || true
+        sleep 0.2
+    fi
+}
+
+LOCAL_SOURCE_FINGERPRINT="$(stat -c '%Y:%s' "$LOCAL_SOURCE_ASAR")|${CODEX_DESKTOP_LOCAL_RUNTIME_VERSION}"
+LOCAL_RUNTIME_NEEDS_REBUILD=1
+if [[ -d "$LOCAL_RUNTIME_APP_DIR" && -f "$LOCAL_RUNTIME_STAMP" ]]; then
+    if [[ "$(<"$LOCAL_RUNTIME_STAMP")" == "$LOCAL_SOURCE_FINGERPRINT" ]]; then
+        LOCAL_RUNTIME_NEEDS_REBUILD=0
+    fi
+fi
+
+if [[ "$LOCAL_RUNTIME_NEEDS_REBUILD" -eq 1 ]]; then
+    rm -rf "$LOCAL_RUNTIME_APP_DIR"
+    npx --yes asar extract "$LOCAL_SOURCE_ASAR" "$LOCAL_RUNTIME_APP_DIR"
+    LOCAL_RUNTIME_APP_DIR="$LOCAL_RUNTIME_APP_DIR" LOCAL_RUNTIME_ICON_PATH="$LOCAL_RUNTIME_ICON_PATH" python3 - <<'PY'
+from pathlib import Path
+import json
+import os
+
+root = Path(os.environ["LOCAL_RUNTIME_APP_DIR"])
+
+
+def replace_once(path: Path, original: str, patched: str, *, error_message: str) -> None:
+    text = path.read_text()
+    if patched in text:
+        return
+    if original not in text:
+        raise SystemExit(error_message)
+    path.write_text(text.replace(original, patched, 1))
+
+
+package_json = root / "package.json"
+package_data = json.loads(package_json.read_text())
+package_data["name"] = "local-ai-console"
+package_data["productName"] = "Local LLM Console"
+package_data["description"] = "Local LLM Console"
+package_data["desktopName"] = "local-ai-console.desktop"
+package_json.write_text(json.dumps(package_data, indent=2) + "\n")
+
+bootstrap_bundle = root / ".vite" / "build" / "bootstrap.js"
+replace_once(
+    bootstrap_bundle,
+    "t.app.setName(e.Xr(b))",
+    "t.app.setName(process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||e.Xr(b))",
+    error_message="Local desktop runtime patch failed: bootstrap app name snippet not found",
+)
+
+main_bundle = root / ".vite" / "build" / "main-C8I_nqq_.js"
+replace_once(
+    main_bundle,
+    "function dr(){return`Codex Desktop/${t.app.getVersion()} (${process.platform}; ${process.arch})`}",
+    "function dr(){let e=process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`;return`${e}/${t.app.getVersion()} (${process.platform}; ${process.arch})`}",
+    error_message="Local desktop runtime patch failed: desktop user-agent title snippet not found",
+)
+replace_once(
+    main_bundle,
+    "throw Error(`Sign in to ChatGPT in Codex Desktop to ${e}.`)",
+    "throw Error(`Sign in to Local LLM Console to ${e}.`)",
+    error_message="Local desktop runtime patch failed: desktop auth sign-in snippet not found",
+)
+replace_once(
+    main_bundle,
+    "function xr(e){return`Sign in to ChatGPT in Codex Desktop to ${e}.`}",
+    "function xr(e){return`Sign in to Local LLM Console to ${e}.`}",
+    error_message="Local desktop runtime patch failed: desktop auth helper snippet not found",
+)
+replace_once(
+    main_bundle,
+    "clientInfo:{name:hn,title:`Codex Desktop`,version:u}",
+    "clientInfo:{name:hn,title:process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`,version:u}",
+    error_message="Local desktop runtime patch failed: app-server client title snippet not found",
+)
+replace_once(
+    main_bundle,
+    "title:i??t.app.getName()",
+    "title:process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`",
+    error_message="Local desktop runtime patch failed: window title snippet not found",
+)
+replace_once(
+    main_bundle,
+    "title:i??(process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||t.app.getName())",
+    "title:process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`",
+    error_message="Local desktop runtime patch failed: patched window title snippet not found",
+)
+replace_once(
+    main_bundle,
+    "hn=`Codex Desktop`",
+    "hn=process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`",
+    error_message="Local desktop runtime patch failed: runtime client title constant not found",
+)
+replace_once(
+    main_bundle,
+    "title:`Codex Desktop`",
+    "title:process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`",
+    error_message="Local desktop runtime patch failed: runtime client info title not found",
+)
+replace_once(
+    main_bundle,
+    "<title>Codex</title>",
+    "<title>Local LLM Console</title>",
+    error_message="Local desktop runtime patch failed: inline fallback HTML title not found",
+)
+replace_once(
+    main_bundle,
+    "title:`Codex Debug`",
+    "title:`Local LLM Console Debug`",
+    error_message="Local desktop runtime patch failed: debug window title not found",
+)
+replace_once(
+    main_bundle,
+    "icon:process.resourcesPath+`/../content/webview/assets/app-D0g8sCle.png`",
+    "icon:process.env.CODEX_DESKTOP_WINDOW_ICON_PATH?.trim()||process.resourcesPath+`/../content/webview/assets/app-D0g8sCle.png`",
+    error_message="Local desktop runtime patch failed: Linux window icon snippet not found",
+)
+replace_once(
+    main_bundle,
+    "webPreferences:T}),k=O.webContents",
+    "webPreferences:T}),O.setTitle(process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`),O.on(`page-title-updated`,e=>{e.preventDefault(),O.isDestroyed()||O.setTitle(process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`)}),k=O.webContents",
+    error_message="Local desktop runtime patch failed: page-title override snippet not found",
+)
+replace_once(
+    main_bundle,
+    "O.once(`ready-to-show`,()=>{vy().info(`window ready-to-show`,{safe:{hostId:d,windowId:O.id,webContentsId:O.webContents.id,appearance:c,startupElapsedMs:Date.now()-m}})})",
+    "O.once(`ready-to-show`,()=>{O.setTitle(process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`),vy().info(`window ready-to-show`,{safe:{hostId:d,windowId:O.id,webContentsId:O.webContents.id,appearance:c,startupElapsedMs:Date.now()-m}})})",
+    error_message="Local desktop runtime patch failed: ready-to-show title hook snippet not found",
+)
+replace_once(
+    main_bundle,
+    "function Cg(e){let n=t.Menu.buildFromTemplate([{role:`quit`}]);return(Array.isArray(n)?n:n.items)[0]?.label??`Quit ${e}`}",
+    "function Cg(e){let n=process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||e,r=t.Menu.buildFromTemplate([{role:`quit`}]);return(Array.isArray(r)?r:r.items)[0]?.label?.replace(`Codex Desktop`,n).replace(`Codex`,n)??`Quit ${n}`}",
+    error_message="Local desktop runtime patch failed: tray quit label snippet not found",
+)
+replace_once(
+    main_bundle,
+    "let o=t.app.getName();if(t.dialog.showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`],defaultId:0,cancelId:1,noLink:!0,title:`Quit ${o}?`,message:`Quit ${o}?`,detail:`Any local threads running on this machine will be interrupted and scheduled automations won't run`})!==0)",
+    "let o=process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`;if(t.dialog.showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`],defaultId:0,cancelId:1,noLink:!0,title:`Quit ${o}?`,message:`Quit ${o}?`,detail:`Any local threads running on this machine will be interrupted and scheduled automations won't run`})!==0)",
+    error_message="Local desktop runtime patch failed: quit confirmation title snippet not found",
+)
+replace_once(
+    main_bundle,
+    "updateOverlayTitle(e,n){e.window.isDestroyed()||e.window.setTitle(n??t.app.getName())}",
+    "updateOverlayTitle(e,n){e.window.isDestroyed()||e.window.setTitle(process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`)}",
+    error_message="Local desktop runtime patch failed: overlay title updater snippet not found",
+)
+replace_once(
+    main_bundle,
+    "updateTitle(e,t){if(e.window.isDestroyed())return;let n=j_(t);e.window.setTitle(n)}",
+    "updateTitle(e,t){if(e.window.isDestroyed())return;e.window.setTitle(process.env.CODEX_DESKTOP_RUNTIME_NAME?.trim()||`Local LLM Console`)}",
+    error_message="Local desktop runtime patch failed: hotkey window title updater snippet not found",
+)
+
+runtime_webview_index = root / "webview" / "index.html"
+replace_once(
+    runtime_webview_index,
+    "<title>Codex</title>",
+    "<title>Local LLM Console</title>",
+    error_message="Local desktop runtime patch failed: runtime webview title snippet not found",
+)
+
+runtime_index_bundle = next((root / "webview" / "assets").glob("index-*.js"), None)
+if runtime_index_bundle is None:
+    raise SystemExit("Local desktop runtime patch failed: runtime index bundle not found")
+
+replace_once(
+    runtime_index_bundle,
+    "De=n??(0,$.jsx)(yh,{tooltipContent:(0,$.jsx)(Y,{id:`codex.header.settingsTooltip`,defaultMessage:`Settings`,description:`Tooltip text for opening settings`}),children:(0,$.jsx)(xp,{color:`ghost`,size:`icon`,children:(0,$.jsx)(Zm,{className:`icon-xs`})})})",
+    "De=n??(0,$.jsx)(yh,{tooltipContent:(0,$.jsx)(Y,{id:`codex.header.settingsTooltip`,defaultMessage:`Settings`,description:`Tooltip text for opening settings`}),children:(0,$.jsx)(xp,{color:`ghost`,size:`icon`,onClick:()=>{a(!1),o(`/settings/general-settings`,{state:W})},children:(0,$.jsx)(Zm,{className:`icon-xs`})})})",
+    error_message="Local desktop runtime patch failed: settings header trigger snippet not found",
+)
+replace_once(
+    runtime_index_bundle,
+    "function uw(){let e=(0,Q.c)(23),{authMethod:t,planAtLogin:n}=$f(),{data:r}=Xi(),{data:i}=Ji(),a=t===`chatgpt`,o;",
+    "function uw(){let e=(0,Q.c)(23),{authMethod:t,planAtLogin:n}=$f(),{data:r}=Xi(),{data:i}=Ji(),a=t===`chatgpt`,o,N=d();",
+    error_message="Local desktop runtime patch failed: settings footer function snippet not found",
+)
+replace_once(
+    runtime_index_bundle,
+    ",d=s?.plan??n,f=r?.accounts,p;e[2]!==i||e[3]!==t||e[4]!==d||e[5]!==f?(p=ow({authMethod:t,plan:d,currentAccount:i,accounts:f}),e[2]=i,e[3]=t,e[4]=d,e[5]=f,e[6]=p):p=e[6];",
+    ",P=s?.plan??n,f=r?.accounts,p;e[2]!==i||e[3]!==t||e[4]!==P||e[5]!==f?(p=ow({authMethod:t,plan:P,currentAccount:i,accounts:f}),e[2]=i,e[3]=t,e[4]=P,e[5]=f,e[6]=p):p=e[6];",
+    error_message="Local desktop runtime patch failed: settings footer plan snippet not found",
+)
+replace_once(
+    runtime_index_bundle,
+    "children:(0,$.jsx)(sw,{triggerButton:(0,$.jsx)(Ky,{icon:b,label:x,onClick:dw,trailing:S,iconClassName:`icon-sm`})})",
+    "children:(0,$.jsx)(Ky,{icon:b,label:x,onClick:()=>{N(`/settings/general-settings`)},trailing:S,iconClassName:`icon-sm`})",
+    error_message="Local desktop runtime patch failed: settings footer dropdown snippet not found",
+)
+replace_once(
+    runtime_index_bundle,
+    "Ue=(0,$.jsxs)(dh,{open:i,onOpenChange:a,contentWidth:Ee,triggerButton:De,children:[Oe,He]})",
+    "Ue=(0,$.jsx)(`div`,{className:`contents`,children:De})",
+    error_message="Local desktop runtime patch failed: settings header dropdown snippet not found",
+)
+replace_once(
+    runtime_index_bundle,
+    "Ne=()=>{a(!1),E.dispatchMessage(`show-settings`,{section:Tg})}",
+    "Ne=()=>{a(!1),o(`/settings/general-settings`,{state:W})}",
+    error_message="Local desktop runtime patch failed: extension settings action snippet not found",
+)
+
+runtime_webview_text = runtime_webview_index.read_text()
+runtime_settings_script_hash = "sha256-5k4JkxIm3KiM/KmfRx8pzEyLPiwx6uNO7fSyWH5bOsI="
+runtime_settings_script = """    <script>
+      (() => {
+        window.__openLocalSettings = () => {
+          const nextPath = `/settings/general-settings`;
+          if (window.location.pathname === nextPath) return;
+          window.history.pushState({}, ``, nextPath);
+          window.dispatchEvent(new PopStateEvent(`popstate`));
+        };
+      })();
+    </script>
+"""
+runtime_settings_csp_original = "script-src &#39;self&#39; &#39;sha256-Z2/iFzh9VMlVkEOar1f/oSHWwQk3ve1qk/C2WdsC4Xk=&#39; &#39;wasm-unsafe-eval&#39;"
+runtime_settings_csp_patched = f"script-src &#39;self&#39; &#39;sha256-Z2/iFzh9VMlVkEOar1f/oSHWwQk3ve1qk/C2WdsC4Xk=&#39; &#39;{runtime_settings_script_hash}&#39; &#39;wasm-unsafe-eval&#39;"
+runtime_startup_logo_original = """      .startup-loader__logo {
+        position: relative;
+        width: 56px;
+        height: 56px;
+        opacity: 0;
+        animation: startup-codex-logo-fade-in 180ms ease-out 60ms forwards;
+      }
+"""
+runtime_startup_logo_patched = """      .startup-loader__logo {
+        display: block;
+        width: 56px;
+        height: 56px;
+        object-fit: contain;
+        overflow: hidden;
+        border-radius: 22%;
+        opacity: 0;
+        animation: startup-codex-logo-fade-in 180ms ease-out 60ms forwards;
+      }
+"""
+runtime_startup_markup_original = """      <div class="startup-loader" aria-hidden="true">
+        <div class="startup-loader__logo">
+          <svg
+            class="startup-loader__base"
+            viewBox="0 0 500 500"
+            fill="currentColor"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M330.34 313.62h-67.84c-7.65 0-13.85-6.2-13.85-13.85s6.2-13.85 13.85-13.85h67.84c7.65 0 13.85 6.2 13.85 13.85s-6.2 13.85-13.85 13.85Z"
+            />
+            <path
+              d="M169.65 313.38c-2.36 0-4.74-.6-6.93-1.87-6.62-3.83-8.88-12.31-5.05-18.93l23.78-41.08-23.91-43.21c-3.7-6.69-1.28-15.12 5.41-18.82 6.69-3.71 15.12-1.28 18.82 5.41l31.51 56.94-31.64 54.65c-2.57 4.43-7.22 6.91-12 6.91Z"
+            />
+            <path
+              d="M144.61 144.5c1.42-41.82 35.79-75.27 77.95-75.25 27.89.02 52.35 14.68 66.11 36.71 10.93-5.82 23.41-9.12 36.65-9.11 43.05.02 77.94 34.94 77.91 78 0 13.24-3.32 25.72-9.16 36.64 22.02 13.79 36.66 38.26 36.64 66.15-.02 42.16-33.52 76.48-75.34 77.86-1.42 41.82-35.78 75.28-77.94 75.25-27.89-.02-52.35-14.68-66.11-36.72-10.93 5.82-23.4 9.13-36.65 9.12-43.05-.02-77.94-34.94-77.91-78 0-13.24 3.32-25.72 9.16-36.64-22.02-13.79-36.65-38.26-36.64-66.15.02-42.16 33.51-76.48 75.33-77.86ZM297.77 71.99c-19.24-19.26-45.83-31.17-75.2-31.19-49.23-.03-90.67 33.39-102.84 78.79-45.41 12.12-78.87 53.52-78.9 102.76-.02 29.37 11.87 55.97 31.1 75.23-2.35 8.79-3.62 18.03-3.63 27.56-.03 58.77 47.58 106.44 106.35 106.47 9.53 0 18.77-1.25 27.55-3.6 19.24 19.26 45.84 31.18 75.21 31.2 49.24.03 90.67-33.39 102.84-78.8 45.42-12.11 78.88-53.51 78.91-102.75.02-29.37-11.87-55.98-31.11-75.24 2.35-8.78 3.62-18.02 3.63-27.55.03-58.77-47.58-106.44-106.35-106.47-9.53 0-18.77 1.25-27.56 3.59Z"
+            />
+          </svg>
+          <div class="startup-loader__overlay"></div>
+        </div>
+      </div>"""
+runtime_startup_markup_patched = """      <div class="startup-loader" aria-hidden="true">
+        <img class="startup-loader__logo" src="./assets/local-ai-console-gradient.png" alt="" />
+      </div>"""
+
+if "src=\"./assets/local-ai-console-gradient.png\"" not in runtime_webview_text:
+    if runtime_startup_logo_original not in runtime_webview_text:
+        raise SystemExit("Local desktop runtime patch failed: runtime startup logo style snippet not found")
+    runtime_webview_text = runtime_webview_text.replace(
+        runtime_startup_logo_original,
+        runtime_startup_logo_patched,
+        1,
+    )
+    if runtime_startup_markup_original not in runtime_webview_text:
+        raise SystemExit("Local desktop runtime patch failed: runtime startup logo markup snippet not found")
+    runtime_webview_text = runtime_webview_text.replace(
+        runtime_startup_markup_original,
+        runtime_startup_markup_patched,
+        1,
+    )
+
+if runtime_settings_script_hash not in runtime_webview_text:
+    if runtime_settings_csp_original in runtime_webview_text:
+        runtime_webview_text = runtime_webview_text.replace(
+            runtime_settings_csp_original,
+            runtime_settings_csp_patched,
+            1,
+        )
+    if runtime_settings_script not in runtime_webview_text:
+        if "</body>" not in runtime_webview_text:
+            raise SystemExit("Local desktop runtime patch failed: runtime webview body end snippet not found")
+        runtime_webview_text = runtime_webview_text.replace(
+            "</body>",
+            f"{runtime_settings_script}</body>",
+            1,
+        )
+
+runtime_webview_index.write_text(runtime_webview_text)
+
+runtime_webview_assets = root / "webview" / "assets"
+runtime_icon_source = Path(os.environ["LOCAL_RUNTIME_ICON_PATH"])
+runtime_icon_target = runtime_webview_assets / "local-ai-console-gradient.png"
+if runtime_icon_source.exists():
+    runtime_icon_target.write_bytes(runtime_icon_source.read_bytes())
+    packaged_runtime_icon_target = runtime_webview_assets / "app-D0g8sCle.png"
+    packaged_runtime_icon_target.write_bytes(runtime_icon_source.read_bytes())
+
+runtime_loading_bundle = next(runtime_webview_assets.glob("loading-page-*.js"), None)
+if runtime_loading_bundle is None:
+    raise SystemExit("Local desktop runtime patch failed: runtime loading-page bundle not found")
+
+runtime_loading_text = runtime_loading_bundle.read_text()
+if "/assets/local-ai-console-gradient.png" not in runtime_loading_text:
+    function_start = runtime_loading_text.find("function f(e){")
+    function_end = runtime_loading_text.find("}function p(e){", function_start)
+    if function_start == -1 or function_end == -1:
+        raise SystemExit("Local desktop runtime patch failed: runtime loading-page logo snippet not found")
+    runtime_loading_text = (
+        runtime_loading_text[:function_start]
+        + "function f(e){let{className:t}=e;return(0,c.jsx)(`div`,{\"aria-hidden\":`true`,className:i(`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-[22%]`,t),children:(0,c.jsx)(`img`,{src:`/assets/local-ai-console-gradient.png`,alt:``,className:`size-full object-contain`})})}"
+        + runtime_loading_text[function_end:]
+    )
+    runtime_loading_bundle.write_text(runtime_loading_text)
+PY
+    printf '%s' "$LOCAL_SOURCE_FINGERPRINT" > "$LOCAL_RUNTIME_STAMP"
+fi
+
+export CODEX_DESKTOP_RUNTIME_NAME="${CODEX_DESKTOP_RUNTIME_NAME:-Local LLM Console}"
+export CODEX_DESKTOP_WINDOW_ICON_PATH="$LOCAL_RUNTIME_ICON_PATH"
+export CODEX_DESKTOP_ELECTRON_APP_PATH="$LOCAL_RUNTIME_APP_DIR"
+export CODEX_ELECTRON_USER_DATA_PATH="${CODEX_ELECTRON_USER_DATA_PATH:-$LOCAL_USER_DATA_DIR}"
+terminate_stale_local_runtime_processes
+
+SOURCE_WEBVIEW_DIR="$LOCAL_WEBVIEW_SOURCE_DIR"
+export CODEX_DESKTOP_WEBVIEW_DIR="$LOCAL_WEBVIEW_DIR"
+LOCAL_WEBVIEW_SOURCE_FINGERPRINT="$({
+    find "$LOCAL_WEBVIEW_SOURCE_DIR" -type f -printf '%P:%s:%T@\n' | LC_ALL=C sort
+    printf 'patch-version:%s\n' "$CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION"
+} | sha256sum | awk '{print $1}')"
+LOCAL_WEBVIEW_NEEDS_REBUILD=1
+if [[ -d "$LOCAL_WEBVIEW_DIR" && -f "$LOCAL_WEBVIEW_STAMP" ]]; then
+    if [[ "$(<"$LOCAL_WEBVIEW_STAMP")" == "$LOCAL_WEBVIEW_SOURCE_FINGERPRINT" ]]; then
+        LOCAL_WEBVIEW_NEEDS_REBUILD=0
+    fi
+fi
+
+if [[ "$LOCAL_WEBVIEW_NEEDS_REBUILD" -eq 1 ]]; then
+SOURCE_WEBVIEW_DIR="$SOURCE_WEBVIEW_DIR" LOCAL_WEBVIEW_DIR="$LOCAL_WEBVIEW_DIR" python3 - <<'PY'
+from pathlib import Path
+import os
+import re
+import shutil
+import sys
+import tempfile
+
+source = Path(os.environ["SOURCE_WEBVIEW_DIR"])
+target = Path(os.environ["LOCAL_WEBVIEW_DIR"])
+staging = Path(tempfile.mkdtemp(prefix=f"{target.name}-", dir=str(target.parent)))
+shutil.rmtree(staging, ignore_errors=True)
+shutil.copytree(source, staging)
+shutil.rmtree(target, ignore_errors=True)
+staging.replace(target)
+
+
+def patch_bundle(path: Path, replacements: list[tuple[str, str]], *, error_message: str) -> None:
+    text = path.read_text()
+    changed = False
+    for original, patched in replacements:
+        if patched and patched in text:
+            continue
+        if original not in text:
+            continue
+        text = text.replace(original, patched, 1)
+        changed = True
+    if changed:
+        path.write_text(text)
+
+
+def patch_text_file(path: Path, replacements: list[tuple[str, str]], *, error_message: str) -> None:
+    text = path.read_text()
+    changed = False
+    for original, patched in replacements:
+        if patched and patched in text:
+            continue
+        if original not in text:
+            continue
+        text = text.replace(original, patched, 1)
+        changed = True
+    if changed:
+        path.write_text(text)
+
+
+def rewrite_default_messages(path: Path, transform) -> None:
+    text = path.read_text()
+    changed = False
+
+    def replace(match):
+        nonlocal changed
+        original = match.group(1)
+        patched = transform(original)
+        if patched != original:
+            changed = True
+            return f"defaultMessage:`{patched}`"
+        return match.group(0)
+
+    patched_text = re.sub(r"defaultMessage:`([^`]*)`", replace, text)
+    if changed:
+        path.write_text(patched_text)
+
+
+def rewrite_locale_message(path: Path, key: str, value: str) -> None:
+    text = path.read_text()
+    pattern = rf'("{re.escape(key)}":`)([^`]*)`'
+    patched_text, count = re.subn(pattern, rf"\1{value}`", text)
+    if count:
+        path.write_text(patched_text)
+
+
+index_html = target / "index.html"
+patch_text_file(
+    index_html,
+    [
+        ("<title>Codex</title>", "<title>Local LLM Console</title>"),
+    ],
+    error_message="Local desktop webview patch failed: expected index.html branding snippet not found",
+)
+
+settings_shared = next((target / "assets").glob("settings-shared-*.js"), None)
+if settings_shared is None:
+    raise SystemExit("Local desktop webview patch failed: settings-shared bundle not found")
+
+patch_text_file(
+    settings_shared,
+    [
+        (
+            "return (0, u.jsxs)(`div`, {\n"
+            "    children: [\n"
+            "      (0, u.jsx)(t, {\n"
+            "        id: `settings.section.mcp-settings.subtitle`,\n"
+            "        defaultMessage: `Connect external tools and data sources. `,\n"
+            "        description: `Subtitle for MCP settings section`,\n"
+            "      }),\n"
+            "      (0, u.jsx)(`a`, {\n"
+            "        className: `inline-flex items-center gap-1 text-base text-token-text-link-foreground`,\n"
+            "        href: s,\n"
+            "        target: `_blank`,\n"
+            "        rel: `noreferrer`,\n"
+            "        children: (0, u.jsx)(t, {\n"
+            "          id: `settings.section.mcp-settings.learnMore`,\n"
+            "          defaultMessage: `Learn more.`,\n"
+            "          description: `Label for MCP docs link`,\n"
+            "        }),\n"
+            "      }),\n"
+            "    ],\n"
+            "  });",
+            "return (0, u.jsx)(`div`, {\n"
+            "    children: (0, u.jsx)(t, {\n"
+            "      id: `settings.section.mcp-settings.subtitle`,\n"
+            "      defaultMessage: `Connect external tools and data sources.`,\n"
+            "      description: `Subtitle for MCP settings section`,\n"
+            "    }),\n"
+            "  });",
+        ),
+    ],
+    error_message="Local desktop webview patch failed: MCP settings learn-more block not found",
+)
+
+agent_settings = next((target / "assets").glob("agent-settings-*.js"), None)
+if agent_settings is None:
+    raise SystemExit("Local desktop webview patch failed: agent-settings bundle not found")
+
+patch_text_file(
+    agent_settings,
+    [
+        (
+            "defaultMessage:`Configure approval policy and sandbox settings <a>Learn more</a>`",
+            "defaultMessage:`Configure approval policy and sandbox settings`",
+        ),
+        (
+            "defaultMessage:`Restart Codex after editing to apply changes`",
+            "defaultMessage:`Restart Local LLM Console after editing to apply changes`",
+        ),
+        (
+            "i?(0,q.jsxs)(L,{className:`gap-2`,children:[(0,q.jsx)(L.Header,{title:(0,q.jsx)(g,{id:`settings.agent.importSettings.sectionTitle`,defaultMessage:`Import external agent config`,description:`Heading for the inline external agent config import section`}),subtitle:(0,q.jsx)(g,{id:`settings.agent.importSettings.sectionSubtitle`,defaultMessage:`Detect and import migratable settings from another agent`,description:`Subtitle for the inline external agent config import section`})}),(0,q.jsx)(L.Content,{children:(0,q.jsx)(Se,{children:oe?(0,q.jsx)(B,{label:(0,q.jsx)(g,{id:`settings.agent.importSettings.loadingLabel`,defaultMessage:`Checking for imports`,description:`Label shown while home-scoped external config migration items are loading`}),description:(0,q.jsx)(g,{id:`settings.agent.importSettings.detectingDescription`,defaultMessage:`Checking for compatible external settings, AGENTS.md, and skills`,description:`Description shown while home-scoped external config migration items are loading`}),control:(0,q.jsx)(O,{className:`h-4 w-4`})}):f.length===0?(0,q.jsx)(y,{title:(0,q.jsx)(g,{id:`settings.agent.importSettings.emptyLabel`,defaultMessage:`No imports found`,description:`Label shown when no home-scoped external config migration items are available`}),description:(0,q.jsx)(g,{id:`settings.agent.importSettings.emptyDescription`,defaultMessage:`No external settings were found. You're all caught up!`,description:`Description for the import settings row when no home-scoped external config items are available`})}):(0,q.jsxs)(q.Fragment,{children:[f.map(e=>(0,q.jsx)(B,{label:Ae(r,e),description:e.description,control:(0,q.jsx)(k,{className:`h-4 w-4 rounded-[3px]`,checked:ne[Ke(e)]??!1,disabled:ie.isPending,onCheckedChange:t=>{u(n=>({...n,[Ke(e)]:t}))}})},Ke(e))),(0,q.jsx)(B,{label:(0,q.jsx)(g,{id:`settings.agent.importSettings.summaryLabel`,defaultMessage:`{count} selected`,description:`Summary label for selected home-scoped external config migration items`,values:{count:p.length}}),description:(0,q.jsx)(g,{id:`settings.agent.importSettings.summaryDescription`,defaultMessage:`Import selected config`,description:`Summary description for the inline external agent config import section`}),control:(0,q.jsx)(ge,{color:`secondary`,size:`toolbar`,loading:ie.isPending,disabled:p.length===0,onClick:()=>{ie.mutateAsync(p)},children:(0,q.jsx)(g,{id:`settings.agent.importSettings.applySelected`,defaultMessage:`Apply selected`,description:`Button label to apply selected home-scoped external config migration items`})})})]})})})]}):null",
+            "",
+        ),
+        (
+            "}),actions:(0,q.jsxs)(ge,{color:`ghost`,size:`toolbar`,disabled:R?.filePath==null,onClick:()=>{R?.filePath!=null&&x({path:R.filePath,cwd:R.workspaceRoot==null?null:d(R.workspaceRoot),hostId:e,target:Te?.preferredTarget,openFile:le.mutate})},children:[(0,q.jsx)(g,{id:`settings.agent.configuration.scope.open`,defaultMessage:`Open config.toml`,description:`Button label to open the selected config file`}),(0,q.jsx)(F,{className:`icon-2xs`})]})",
+            "})",
+        ),
+        (
+            "defaultMessage:`Codex dependencies look healthy`",
+            "defaultMessage:`Workspace dependencies look healthy`",
+        ),
+        (
+            "defaultMessage:`Codex dependencies may need repair. Send /feedback if this keeps happening`",
+            "defaultMessage:`Workspace dependencies may need repair. Send /feedback if this keeps happening`",
+        ),
+        (
+            "defaultMessage:`Couldn’t diagnose Codex dependencies`",
+            "defaultMessage:`Couldn’t diagnose workspace dependencies`",
+        ),
+        (
+            "defaultMessage:`Codex dependencies were reinstalled`",
+            "defaultMessage:`Workspace dependencies were reinstalled`",
+        ),
+        (
+            "defaultMessage:`Codex dependency download canceled`",
+            "defaultMessage:`Workspace dependency download canceled`",
+        ),
+        (
+            "defaultMessage:`Couldn’t reinstall Codex dependencies`",
+            "defaultMessage:`Couldn’t reinstall workspace dependencies`",
+        ),
+        (
+            "defaultMessage:`No Codex dependency download is running`",
+            "defaultMessage:`No workspace dependency download is running`",
+        ),
+        (
+            "defaultMessage:`Canceling Codex dependency download`",
+            "defaultMessage:`Canceling workspace dependency download`",
+        ),
+        (
+            "defaultMessage:`Couldn’t cancel Codex dependency download`",
+            "defaultMessage:`Couldn’t cancel workspace dependency download`",
+        ),
+        (
+            "defaultMessage:`Codex dependencies`",
+            "defaultMessage:`Workspace dependencies`",
+        ),
+        (
+            "defaultMessage:`Allow Codex to install and expose bundled Node.js and Python tools`",
+            "defaultMessage:`Allow the app to install and expose bundled Node.js and Python tools`",
+        ),
+        (
+            "defaultMessage:`Enable Codex dependencies`",
+            "defaultMessage:`Enable workspace dependencies`",
+        ),
+        (
+            "defaultMessage:`Diagnose issues in Codex Workspace`",
+            "defaultMessage:`Diagnose issues in the local workspace`",
+        ),
+        (
+            "defaultMessage:`Choose when Codex asks for approval`",
+            "defaultMessage:`Choose when the app asks for approval`",
+        ),
+        (
+            "defaultMessage:`Choose how much Codex can do when running commands`",
+            "defaultMessage:`Choose how much the app can do when running commands`",
+        ),
+    ],
+    error_message="Local desktop webview patch failed: agent-settings branding snippet not found",
+)
+
+general_settings_files = list((target / "assets").glob("general-settings-*.js"))
+if not general_settings_files:
+    raise SystemExit("Local desktop webview patch failed: general-settings bundle not found")
+
+for general_settings in general_settings_files:
+    general_settings_text = general_settings.read_text()
+    if "Codex" not in general_settings_text:
+        continue
+    patch_text_file(
+        general_settings,
+        [
+            (
+                "defaultMessage:`Set when Codex alerts you that it's finished`",
+                "defaultMessage:`Set when the app alerts you that it's finished`",
+            ),
+            (
+                "defaultMessage:`Codex browser control`",
+                "defaultMessage:`Browser control`",
+            ),
+            (
+                "defaultMessage:`Allow Codex to control the in-app browser for browser tasks. Restart Codex after changing this setting.`",
+                "defaultMessage:`Allow the app to control the in-app browser for browser tasks. Restart Local LLM Console after changing this setting.`",
+            ),
+            (
+                "defaultMessage:`Allows other signed-in Codex clients to connect to this computer`",
+                "defaultMessage:`Allows other signed-in clients to connect to this computer`",
+            ),
+            (
+                "defaultMessage:`Enable the plugins experience in Codex.`",
+                "defaultMessage:`Enable the plugins experience in the app.`",
+            ),
+            (
+                "defaultMessage:`Restart Codex to apply experimental feature changes`",
+                "defaultMessage:`Restart Local LLM Console to apply experimental feature changes`",
+            ),
+            (
+                "defaultMessage:`Keep Codex in the macOS menu bar when the main window is closed`",
+                "defaultMessage:`Keep the app in the macOS menu bar when the main window is closed`",
+            ),
+            (
+                "defaultMessage:`Show Codex in the menu bar`",
+                "defaultMessage:`Show the app in the menu bar`",
+            ),
+            (
+                "defaultMessage:`Restart Codex to apply this change. The agent is still running in {currentEnvironment}.`",
+                "defaultMessage:`Restart Local LLM Console to apply this change. The agent is still running in {currentEnvironment}.`",
+            ),
+            (
+                "defaultMessage:`Codex can't run in {distributionName} because /usr/bin/bash is missing`",
+                "defaultMessage:`The app can't run in {distributionName} because /usr/bin/bash is missing`",
+            ),
+            (
+                "defaultMessage:`Queue follow-ups while Codex runs or steer the current run. Press {invertFollowUpShortcutLabel} to do the opposite for one message`",
+                "defaultMessage:`Queue follow-ups while the app runs or steer the current run. Press {invertFollowUpShortcutLabel} to do the opposite for one message`",
+            ),
+            (
+                "defaultMessage:`Adjust the base size used for the Codex UI`",
+                "defaultMessage:`Adjust the base size used for the UI`",
+            ),
+            (
+                "defaultMessage:`Keep your computer awake while Codex is running a chat`",
+                "defaultMessage:`Keep your computer awake while the app is running a chat`",
+            ),
+        ],
+        error_message="Local desktop webview patch failed: general-settings branding snippet not found",
+    )
+
+local_environments = next((target / "assets").glob("local-environments-settings-page-*.js"), None)
+if local_environments is None:
+    raise SystemExit("Local desktop webview patch failed: local-environments settings bundle not found")
+
+patch_text_file(
+    local_environments,
+    [
+        (
+            "defaultMessage:`Local environments tell Codex how to set up worktrees for a project. {learnMore}`",
+            "defaultMessage:`Local environments define how to set up worktrees for a project.`",
+        ),
+        (
+            "defaultMessage:`Learn more.`",
+            "defaultMessage:``",
+        ),
+    ],
+    error_message="Local desktop webview patch failed: local-environments branding snippet not found",
+)
+
+skills_page = next((target / "assets").glob("skills-page-*.js"), None)
+if skills_page is None:
+    raise SystemExit("Local desktop webview patch failed: skills page bundle not found")
+
+patch_text_file(
+    skills_page,
+    [
+        (
+            "defaultMessage:`This conversation is running in Codex Cloud.`",
+            "defaultMessage:`This conversation is running in the cloud.`",
+        ),
+        (
+            "defaultMessage:`Give Codex superpowers. <link>Learn more</link>`",
+            "defaultMessage:`Reusable workflows for local models.`",
+        ),
+    ],
+    error_message="Local desktop webview patch failed: skills page branding snippet not found",
+)
+
+index_bundle = next((target / "assets").glob("index-*.js"), None)
+if index_bundle is None:
+    raise SystemExit("Local desktop webview patch failed: index bundle not found")
+
+patch_text_file(
+    index_bundle,
+    [
+        (
+            "De=n??(0,$.jsx)(yh,{tooltipContent:(0,$.jsx)(Y,{id:`codex.header.settingsTooltip`,defaultMessage:`Settings`,description:`Tooltip text for opening settings`}),children:(0,$.jsx)(xp,{color:`ghost`,size:`icon`,children:(0,$.jsx)(Zm,{className:`icon-xs`})})})",
+            "De=n??(0,$.jsx)(yh,{tooltipContent:(0,$.jsx)(Y,{id:`codex.header.settingsTooltip`,defaultMessage:`Settings`,description:`Tooltip text for opening settings`}),children:(0,$.jsx)(xp,{color:`ghost`,size:`icon`,onClick:()=>{a(!1),o(`/settings/general-settings`,{state:W})},children:(0,$.jsx)(Zm,{className:`icon-xs`})})})",
+        ),
+        (
+            "function uw(){let e=(0,Q.c)(23),{authMethod:t,planAtLogin:n}=$f(),{data:r}=Xi(),{data:i}=Ji(),a=t===`chatgpt`,o;",
+            "function uw(){let e=(0,Q.c)(23),{authMethod:t,planAtLogin:n}=$f(),{data:r}=Xi(),{data:i}=Ji(),a=t===`chatgpt`,o,N=d();",
+        ),
+        (
+            ",d=s?.plan??n,f=r?.accounts,p;e[2]!==i||e[3]!==t||e[4]!==d||e[5]!==f?(p=ow({authMethod:t,plan:d,currentAccount:i,accounts:f}),e[2]=i,e[3]=t,e[4]=d,e[5]=f,e[6]=p):p=e[6];",
+            ",P=s?.plan??n,f=r?.accounts,p;e[2]!==i||e[3]!==t||e[4]!==P||e[5]!==f?(p=ow({authMethod:t,plan:P,currentAccount:i,accounts:f}),e[2]=i,e[3]=t,e[4]=P,e[5]=f,e[6]=p):p=e[6];",
+        ),
+        (
+            "children:(0,$.jsx)(sw,{triggerButton:(0,$.jsx)(Ky,{icon:b,label:x,onClick:dw,trailing:S,iconClassName:`icon-sm`})})",
+            "children:(0,$.jsx)(Ky,{icon:b,label:x,onClick:()=>{N(`/settings/general-settings`)},trailing:S,iconClassName:`icon-sm`})",
+        ),
+        (
+            "Ue=(0,$.jsxs)(dh,{open:i,onOpenChange:a,contentWidth:Ee,triggerButton:De,children:[Oe,He]})",
+            "Ue=(0,$.jsx)(`div`,{className:`contents`,children:De})",
+        ),
+        (
+            "Ne=()=>{a(!1),E.dispatchMessage(`show-settings`,{section:Tg})}",
+            "Ne=()=>{a(!1),o(`/settings/general-settings`,{state:W})}",
+        ),
+        (
+            "defaultMessage:`Codex settings`",
+            "defaultMessage:`Local LLM Console settings`",
+        ),
+        (
+            "defaultMessage:`Set up an environment via Codex web`",
+            "defaultMessage:`Set up an environment on the web`",
+        ),
+        (
+            "defaultMessage:`Connect Codex web`",
+            "defaultMessage:`Connect web`",
+        ),
+        (
+            "defaultMessage:`Set up an environment via Codex web to enable sending tasks to the cloud`",
+            "defaultMessage:`Set up an environment on the web to enable sending tasks to the cloud`",
+        ),
+        (
+            "defaultMessage:`Connect your favorite apps to Codex`",
+            "defaultMessage:`Connect your favorite apps`",
+        ),
+        (
+            "defaultMessage:`Ask Codex anything locally`",
+            "defaultMessage:`Ask anything locally`",
+        ),
+        (
+            "defaultMessage:`Ask Codex anything in the cloud`",
+            "defaultMessage:`Ask anything in the cloud`",
+        ),
+        (
+            "defaultMessage:`Codex app`",
+            "defaultMessage:`Local LLM Console`",
+        ),
+        (
+            "defaultMessage:`Dismiss Codex app banner`",
+            "defaultMessage:`Dismiss Local LLM Console banner`",
+        ),
+        (
+            "defaultMessage:`Build faster with the Codex app. Download now or {learnMoreLink}`",
+            "defaultMessage:`Local LLM Console is already installed.`",
+        ),
+        (
+            "defaultMessage:`Our latest frontier agentic coding model — smarter, faster, and more capable at general technical work. {link}`",
+            "defaultMessage:`Our latest frontier agentic coding model — smarter, faster, and more capable at general technical work.`",
+        ),
+    ],
+    error_message="Local desktop webview patch failed: index branding snippet not found",
+)
+
+
+def normalize_local_branding(message: str) -> str:
+    if message in {"Learn more", "Learn more."}:
+        return ""
+    message = re.sub(r"\s*<[^>]+>Learn more</[^>]+>", "", message)
+    message = message.replace("{learnMoreLink}", "").replace("  ", " ").strip()
+    message = message.replace("GPT-5.3-Codex", "GPT-5.3")
+    message = message.replace("CODEX", "LOCAL LLM CONSOLE")
+    message = message.replace("Codex", "Local LLM Console")
+    return message
+
+for asset_bundle in (target / "assets").glob("*.js"):
+    rewrite_default_messages(asset_bundle, normalize_local_branding)
+    rewrite_locale_message(asset_bundle, "threadOverlay.defaultTitle", "Local LLM Console")
+    rewrite_locale_message(asset_bundle, "hotkeyWindow.defaultTitle", "Local LLM Console")
+
+font_bundle = next((target / "assets").glob("font-settings-*.js"), None)
+if font_bundle is None:
+    raise SystemExit("Local desktop webview patch failed: font-settings bundle not found")
+
+original = (
+    "if(l.useHiddenModels?l.availableModels.has(e.model):!e.hidden)"
+    "{let t=o===`copilot`?[e.supportedReasoningEfforts.find(He)??"
+    "{reasoningEffort:`medium`,description:`medium effort`}]:"
+    "[...e.supportedReasoningEfforts];n.models.push({...e,"
+    "supportedReasoningEfforts:t}),r=e.isDefault?e:r}}),"
+    "r??=n.models.find(e=>e.model===l.defaultModel)??null,"
+    "{modelsByType:n,defaultModel:r}}"
+)
+previous_patched = (
+    "if((o==null?!e.hidden:l.useHiddenModels?l.availableModels.has(e.model):!e.hidden))"
+    "{let t=o===`copilot`?[e.supportedReasoningEfforts.find(He)??"
+    "{reasoningEffort:`medium`,description:`medium effort`}]:"
+    "[...e.supportedReasoningEfforts];n.models.push({...e,"
+    "supportedReasoningEfforts:t}),r=e.isDefault?e:r}}),"
+    "r??=n.models.find(e=>e.model===l.defaultModel)??null,"
+    "{modelsByType:n,defaultModel:r}}"
+)
+patched = (
+    "if(!e.hidden)"
+    "{let t=o===`copilot`?[e.supportedReasoningEfforts.find(He)??"
+    "{reasoningEffort:`medium`,description:`medium effort`}]:"
+    "[...e.supportedReasoningEfforts];n.models.push({...e,"
+    "supportedReasoningEfforts:t}),r=e.isDefault?e:r}}),"
+    "r??=n.models.find(e=>e.model===l.defaultModel)??null,"
+    "{modelsByType:n,defaultModel:r}}"
+)
+
+patch_bundle(
+    font_bundle,
+    [
+        (original, patched),
+        (previous_patched, patched),
+    ],
+    error_message="Local desktop webview patch failed: expected model filter snippet not found",
+)
+
+PY
+    printf '%s' "$LOCAL_WEBVIEW_SOURCE_FINGERPRINT" > "$LOCAL_WEBVIEW_STAMP"
+fi
+
+exec "$BASE_START_SCRIPT" --user-data-dir="$LOCAL_USER_DATA_DIR" "$@"

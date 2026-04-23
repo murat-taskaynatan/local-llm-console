@@ -1,0 +1,38 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+USER_UID="$(id -u)"
+XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${USER_UID}}"
+export XDG_RUNTIME_DIR
+
+if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "${XDG_RUNTIME_DIR}/bus" ]]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+fi
+
+if [[ -z "${DISPLAY:-}" ]]; then
+    export DISPLAY=":0"
+fi
+
+if [[ -z "${XAUTHORITY:-}" ]]; then
+    for candidate in \
+        "${XDG_RUNTIME_DIR}/gdm/Xauthority" \
+        "${HOME}/.Xauthority"
+    do
+        if [[ -f "$candidate" ]]; then
+            export XAUTHORITY="$candidate"
+            break
+        fi
+    done
+fi
+
+printf '[%s] uid=%s display=%s xauthority=%s dbus=%s\n' \
+    "$(date -Is)" \
+    "$USER_UID" \
+    "${DISPLAY:-}" \
+    "${XAUTHORITY:-}" \
+    "${DBUS_SESSION_BUS_ADDRESS:-}" \
+    >> "/tmp/local-ai-console-dispatch-${USER_UID}.log" 2>/dev/null || true
+
+exec "$REPO_ROOT/codex-app/start-local.sh" "$@"

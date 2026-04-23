@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Local LLM Console
+Comment=Local model desktop app for Linux
+Exec=local-ai-console-launch
+Icon=local-ai-console-gradient
+Terminal=false
+Categories=Development;
+StartupNotify=false
+StartupWMClass=local-ai-console
+X-GNOME-WMClass=local-ai-console
