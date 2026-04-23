@@ -4,3 +4,12 @@
 *.pid
 *.tmp
 desktop.ini
+Codex.dmg
+dist/
+node_modules/
+
+/codex-app/*
+!/codex-app/start-local.sh
+!/codex-app/.codex-linux/
+/codex-app/.codex-linux/*
+!/codex-app/.codex-linux/local-ai-console-x11-title-fix.sh

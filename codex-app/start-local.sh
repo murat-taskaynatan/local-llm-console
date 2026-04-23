@@ -64,14 +64,14 @@ export CODEX_DESKTOP_POST_LAUNCH_HOOK="${CODEX_DESKTOP_POST_LAUNCH_HOOK:-$SCRIPT
 mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$LOCAL_USER_DATA_DIR" "$(dirname "$LOCAL_WEBVIEW_DIR")" "$LOCAL_RUNTIME_ROOT"
 
 if [[ ! -f "$BASE_START_SCRIPT" ]]; then
-    echo "Local LLM Console needs a Codex Desktop base install." >&2
-    echo "Set CODEX_DESKTOP_BASE_APP_DIR=/path/to/codex-app or place this overlay inside codex-app." >&2
+    echo "Missing generated base runtime in $BASE_APP_DIR." >&2
+    echo "Run ../install.sh from the repo root to build Local LLM Console, or set CODEX_DESKTOP_BASE_APP_DIR." >&2
     exit 1
 fi
 
 if [[ ! -f "$LOCAL_SOURCE_ASAR" ]]; then
     echo "Missing base runtime archive: $LOCAL_SOURCE_ASAR" >&2
-    echo "Set CODEX_DESKTOP_SOURCE_ASAR=/path/to/app.asar if your base install lives elsewhere." >&2
+    echo "Run ../install.sh from the repo root to build Local LLM Console, or set CODEX_DESKTOP_SOURCE_ASAR." >&2
     exit 1
 fi
 

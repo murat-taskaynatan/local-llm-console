@@ -1,27 +1,27 @@
 # Local LLM Console
 
-Local LLM Console is a local-model-focused Codex Desktop fork layer for Linux.
+Local LLM Console is a local-model-focused Codex Desktop fork for Linux.
 
-This repository is not the full upstream Electron app. It is the extracted Local LLM Console customization layer: local launchers, a patched local webview, desktop integration files, icon assets, an X11 title fix, and a local model catalog for Ollama-backed local models.
+This repository bootstraps and builds its own local app. It includes the Local LLM Console launchers, patched webview, desktop integration files, icon assets, an X11 title fix, a local model catalog, and the scripts needed to generate `codex-app/` locally from upstream assets.
 
 ## What This Repo Is
 
 - A Codex Desktop app fork layer for local models
 - A portable copy of the Local LLM Console launchers and UI patches
 - A local-model catalog and desktop launcher/icon bundle
+- A self-bootstrapping installer that generates the Linux app locally
 
 ## What This Repo Is Not
 
 - Not the full upstream `codex-desktop-linux` source tree
-- Not a standalone Electron distribution by itself
 - Not an OpenAI-hosted Codex cloud client
 
-Local LLM Console still expects a base Codex Desktop installation. This repo supplies the local-model overlay that sits on top of that base app.
+No preinstalled Codex Desktop base app is required. Run the installer in this repo and it will build the local app into `codex-app/`.
 
 ## Included
 
 - `codex-app/start-local.sh`
-  Local launcher that rebuilds and runs the Local LLM Console runtime against an installed Codex Desktop base app
+  Local launcher that rebuilds and runs the Local LLM Console runtime against the generated local app runtime
 - `codex-app/.codex-linux/local-ai-console-x11-title-fix.sh`
   X11 window-title fix for the branded local app window
 - `launcher/codex-local-desktop-cli`
@@ -34,53 +34,61 @@ Local LLM Console still expects a base Codex Desktop installation. This repo sup
   Local app icon
 - `config/local-model-catalog.json`
   Local model catalog used by the app
+- `install.sh`
+  Standalone installer that builds `codex-app/` locally
+- `scripts/`
+  Builder support scripts used by the installer
 - `webview/`
   The patched Local LLM Console webview snapshot
 
 ## Usage
 
-You need an installed Codex Desktop base app.
-
-Two workable layouts:
-
-1. Overlay-in-place
-   Copy the contents of `codex-app/` into an existing Codex Desktop `codex-app/` directory and use the repo launchers.
-2. External overlay
-   Keep this repo separate and point it at the base app with:
+Install dependencies if needed:
 
 ```bash
-export CODEX_DESKTOP_BASE_APP_DIR=/path/to/codex-app
-local-ai-console-launch
+bash scripts/install-deps.sh
 ```
 
-If your packaged runtime archive is not at `"$CODEX_DESKTOP_BASE_APP_DIR/resources/app.asar"`, also set:
+Build the app:
 
 ```bash
-export CODEX_DESKTOP_SOURCE_ASAR=/path/to/app.asar
+./install.sh
 ```
 
-## Recommended Local Setup
+Launch it:
 
-Put the repo launcher on your `PATH`:
+```bash
+./launcher/local-ai-console-launch
+```
+
+If you already have a local `Codex.dmg`, you can point the installer at it:
+
+```bash
+./install.sh /path/to/Codex.dmg
+```
+
+## Optional Local Setup
+
+Put the launcher on your `PATH`:
 
 ```bash
 ln -sf "$PWD/launcher/local-ai-console-launch" ~/.local/bin/local-ai-console-launch
 ln -sf "$PWD/launcher/codex-local-desktop-cli" ~/.local/bin/codex-local-desktop-cli
 ```
 
-Then install the desktop file:
+Install the desktop file:
 
 ```bash
 cp desktop/local-ai-console.desktop ~/.local/share/applications/
 ```
 
-The desktop file expects `local-ai-console-launch` to be available on `PATH`.
+The desktop file expects `local-ai-console-launch` to be available on `PATH`, and it assumes you have already run `./install.sh`.
 
 ## Models
 
 The included local model catalog is configured for local Ollama models.
 
-The CLI wrapper uses Ollama:
+The generated app uses the local CLI wrapper for Ollama:
 
 ```bash
 codex --disable plugins -c 'model_provider="ollama"'
@@ -88,6 +96,6 @@ codex --disable plugins -c 'model_provider="ollama"'
 
 ## Notes
 
-- This repo intentionally contains only the Local LLM Console layer.
-- It is maintained as a separate repo rather than inside `codex-desktop-linux`.
+- This repo intentionally contains the Local LLM Console layer plus the builder needed to generate its own local app runtime.
+- It builds its own `codex-app/` locally instead of requiring a preinstalled base app.
 - The regular cloud Codex Desktop app is out of scope here.
