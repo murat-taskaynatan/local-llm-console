@@ -332,6 +332,15 @@ replace_optional(
     "<title>Codex</title>",
     "<title>Local LLM Console</title>",
 )
+
+runtime_index_bundle = next((root / "webview" / "assets").glob("index-*.js"), None)
+if runtime_index_bundle is None:
+    raise SystemExit("macOS dist patch failed: runtime index bundle not found")
+replace_optional(
+    runtime_index_bundle,
+    '"read-config":n9((e,t)=>e.readConfig(t)),"read-config-for-host":i9((e,{hostId:t,...n})=>e.sendRequest(`config/read`,n)),"refresh-remote-connection":async(e,{hostId:t})=>{',
+    '"read-config":n9((e,t)=>e.readConfig(t)),"read-config-for-host":i9((e,{hostId:t,...n})=>e.sendRequest(`config/read`,n)),"refresh-remote-connections":async()=>Qe(`refresh-remote-connections`,{params:{}}),"refresh-remote-control-connections":async()=>Qe(`refresh-remote-control-connections`,{params:{}}),"save-codex-managed-remote-ssh-connections":async(e,t)=>Qe(`save-codex-managed-remote-ssh-connections`,{params:t??{}}),"set-remote-connection-auto-connect":async(e,t)=>Qe(`set-remote-connection-auto-connect`,{params:t??{}}),"refresh-remote-connection":async(e,{hostId:t})=>{',
+)
 PY
 
     rm -f "$app_bundle_path/$ASAR_PATH"
