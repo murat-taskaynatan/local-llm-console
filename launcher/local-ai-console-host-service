@@ -17,23 +17,111 @@ CODEX_HELPER="${LOCAL_LLM_CONSOLE_CODEX_HELPER:-$REPO_ROOT/launcher/local-ai-con
 
 mkdir -p "$STATE_DIR" "$CACHE_DIR"
 
-LOCAL_LLM_CONSOLE_HOST_CONFIG="$(
+normalize_local_llm_console_config() {
+  python3 - "$CONFIG_PATH" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+if not path.is_file():
+    raise SystemExit(0)
+
+text = path.read_text(encoding="utf-8")
+
+def normalize_provider(value: str) -> str:
+    value = (value or "").strip().lower()
+    if value in {"codex", "openai"}:
+        return "codex"
+    if value == "lmstudio":
+        return "lmstudio"
+    return "ollama"
+
+
+model_match = re.search(r'(?m)^\s*model_provider\s*=\s*"([^"]*)"', text)
+oss_match = re.search(r'(?m)^\s*oss_provider\s*=\s*"([^"]*)"', text)
+catalog_match = re.search(r'(?m)^\s*model_catalog_json\s*=\s*"([^"]*)"', text)
+alias_matches = re.findall(r'(?m)^\s*local_llm_console_provider\s*=\s*"([^"]*)"', text)
+
+provider = normalize_provider(
+    alias_matches[-1]
+    if alias_matches
+    else (
+        model_match.group(1)
+        if model_match
+        else (oss_match.group(1) if oss_match else "ollama")
+    )
+)
+runtime_provider = "openai" if provider == "codex" else provider
+
+catalog_value = (catalog_match.group(1).strip() if catalog_match else "")
+if not catalog_value and provider != "codex":
+    parent = path.parent.parent
+    suffix = path.parent.name
+    catalog_value = str(parent / f"{suffix}-models.json")
+
+lines = text.splitlines()
+normalized = []
+have_model_provider = False
+have_oss_provider = False
+have_model_catalog = False
+
+for line in lines:
+    if re.match(r'^\s*local_llm_console_provider\s*=.*$', line):
+        continue
+    if re.match(r'^\s*model_provider\s*=.*$', line):
+        normalized.append(f'model_provider = "{runtime_provider}"')
+        have_model_provider = True
+        continue
+    if re.match(r'^\s*oss_provider\s*=.*$', line):
+        normalized.append(f'oss_provider = "{runtime_provider}"')
+        have_oss_provider = True
+        continue
+    if re.match(r'^\s*model_catalog_json\s*=.*$', line):
+        if provider != "codex":
+            normalized.append(f'model_catalog_json = "{catalog_value}"')
+            have_model_catalog = True
+        continue
+    normalized.append(line)
+
+if not have_model_provider:
+    normalized.insert(0, f'model_provider = "{runtime_provider}"')
+if not have_oss_provider:
+    insert_at = 1 if normalized and normalized[0].startswith("model_provider = ") else 0
+    normalized.insert(insert_at, f'oss_provider = "{runtime_provider}"')
+if provider != "codex" and not have_model_catalog:
+    insert_at = 0
+    for index, line in enumerate(normalized):
+        if line.startswith("model_reasoning_effort = ") or line.startswith("model = "):
+            insert_at = index + 1
+    normalized.insert(insert_at, f'model_catalog_json = "{catalog_value}"')
+
+top_level_insert_at = next(
+    (index for index, line in enumerate(normalized) if line.startswith("[")),
+    len(normalized),
+)
+normalized.insert(top_level_insert_at, f'local_llm_console_provider = "{provider}"')
+
+new_text = "\n".join(normalized).rstrip() + "\n"
+if new_text != text:
+    path.write_text(new_text, encoding="utf-8")
+PY
+}
+
+normalize_local_llm_console_config
+
+mapfile -t LOCAL_LLM_CONSOLE_HOST_CONFIG < <(
   python3 - "$CONFIG_PATH" <<'PY'
 from pathlib import Path
 import sys
+import tomllib
 from urllib.parse import urlparse
 
 path = Path(sys.argv[1])
 config = {}
 if path.is_file():
-    for raw_line in path.read_text().splitlines():
-        line = raw_line.split("#", 1)[0].strip()
-        if "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip("'\"")
-        config[key] = value
+    with path.open("rb") as handle:
+        config = tomllib.load(handle)
 
 
 def clean_string(value, default=""):
@@ -64,7 +152,7 @@ def clean_port(value, default=443):
 
 
 provider = clean_identifier(
-    config.get("model_provider") or config.get("oss_provider"),
+    config.get("local_llm_console_provider") or config.get("model_provider") or config.get("oss_provider"),
     "ollama",
 )
 host_enabled = clean_bool(config.get("local_llm_console_host_enabled"))
@@ -78,33 +166,24 @@ proxy_port = parsed.port or 8765
 
 print("on" if host_enabled else "off")
 print(provider)
-print(clean_identifier(config.get("model"), "gpt-oss:120b"))
-print(clean_identifier(config.get("model_reasoning_effort"), "medium"))
 print(host_transport)
 print(host_listen_url)
 print(str(host_https_port))
 print(proxy_host)
 print(str(proxy_port))
 PY
-)"
+)
 
-LOCAL_LLM_CONSOLE_HOST_VALUES=()
-while IFS= read -r line; do
-  LOCAL_LLM_CONSOLE_HOST_VALUES+=("$line")
-done <<<"$LOCAL_LLM_CONSOLE_HOST_CONFIG"
-
-HOST_ENABLED="${LOCAL_LLM_CONSOLE_HOST_VALUES[0]:-off}"
-LOCAL_PROVIDER="${LOCAL_LLM_CONSOLE_HOST_VALUES[1]:-ollama}"
-LOCAL_MODEL="${LOCAL_LLM_CONSOLE_HOST_VALUES[2]:-gpt-oss:120b}"
-LOCAL_REASONING="${LOCAL_LLM_CONSOLE_HOST_VALUES[3]:-medium}"
-HOST_TRANSPORT="${LOCAL_LLM_CONSOLE_HOST_VALUES[4]:-tailscale}"
-HOST_LISTEN_URL="${LOCAL_LLM_CONSOLE_HOST_VALUES[5]:-ws://127.0.0.1:8765}"
-HOST_HTTPS_PORT="${LOCAL_LLM_CONSOLE_HOST_VALUES[6]:-443}"
-HOST_PROXY_HOST="${LOCAL_LLM_CONSOLE_HOST_VALUES[7]:-127.0.0.1}"
-HOST_PROXY_PORT="${LOCAL_LLM_CONSOLE_HOST_VALUES[8]:-8765}"
+HOST_ENABLED="${LOCAL_LLM_CONSOLE_HOST_CONFIG[0]:-off}"
+LOCAL_PROVIDER="${LOCAL_LLM_CONSOLE_HOST_CONFIG[1]:-ollama}"
+HOST_TRANSPORT="${LOCAL_LLM_CONSOLE_HOST_CONFIG[2]:-tailscale}"
+HOST_LISTEN_URL="${LOCAL_LLM_CONSOLE_HOST_CONFIG[3]:-ws://127.0.0.1:8765}"
+HOST_HTTPS_PORT="${LOCAL_LLM_CONSOLE_HOST_CONFIG[4]:-443}"
+HOST_PROXY_HOST="${LOCAL_LLM_CONSOLE_HOST_CONFIG[5]:-127.0.0.1}"
+HOST_PROXY_PORT="${LOCAL_LLM_CONSOLE_HOST_CONFIG[6]:-8765}"
 
 log() {
-  printf '[%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*" >>"$LOG_FILE"
+  printf '[%s] %s\n' "$(date -Is)" "$*" >>"$LOG_FILE"
 }
 
 pid_is_alive() {
@@ -166,7 +245,11 @@ clear_tailscale_publish() {
   local port=""
   for port in "${ports[@]}"; do
     log "clearing tailscale serve https=${port}"
-    tailscale serve --https="$port" off >>"$LOG_FILE" 2>&1 || log "tailscale serve clear failed for https=${port}"
+    if command -v timeout >/dev/null 2>&1; then
+      timeout 4s tailscale serve --https="$port" off >>"$LOG_FILE" 2>&1 || log "tailscale serve clear failed or timed out for https=${port}"
+    else
+      tailscale serve --https="$port" off >>"$LOG_FILE" 2>&1 || log "tailscale serve clear failed for https=${port}"
+    fi
   done
 
   rm -f "$SERVE_PORT_FILE"
@@ -187,24 +270,10 @@ start_app_server() {
   fi
 
   log "starting codex app-server listen=${HOST_LISTEN_URL} provider=${LOCAL_PROVIDER}"
-  if [[ "$LOCAL_PROVIDER" == "codex" || "$LOCAL_PROVIDER" == "openai" ]]; then
-    CODEX_HOME="${LOCAL_LLM_CONSOLE_CLOUD_CODEX_HOME:-$HOME/.codex}" nohup "$CODEX_HELPER" \
-      app-server \
-      --listen "$HOST_LISTEN_URL" \
-      -c 'model_provider="openai"' \
-      -c "model=\"$LOCAL_MODEL\"" \
-      -c "model_reasoning_effort=\"$LOCAL_REASONING\"" \
-      >>"$LOG_FILE" 2>&1 </dev/null &
-    echo "$!" >"$PID_FILE"
-    return 0
-  fi
-
   nohup "$CODEX_HELPER" \
     app-server \
     --disable plugins \
     --listen "$HOST_LISTEN_URL" \
-    -c "model_provider=\"$LOCAL_PROVIDER\"" \
-    -c "oss_provider=\"$LOCAL_PROVIDER\"" \
     >>"$LOG_FILE" 2>&1 </dev/null &
   echo "$!" >"$PID_FILE"
 }
@@ -217,7 +286,11 @@ ensure_tailscale_publish() {
 
   if command -v tailscale >/dev/null 2>&1; then
     log "ensuring tailscale serve https=${HOST_HTTPS_PORT} target=http://${HOST_PROXY_HOST}:${HOST_PROXY_PORT}"
-    tailscale serve --bg --https="$HOST_HTTPS_PORT" "http://${HOST_PROXY_HOST}:${HOST_PROXY_PORT}" >>"$LOG_FILE" 2>&1 || log "tailscale serve failed"
+    if command -v timeout >/dev/null 2>&1; then
+      timeout 4s tailscale serve --bg --https="$HOST_HTTPS_PORT" "http://${HOST_PROXY_HOST}:${HOST_PROXY_PORT}" >>"$LOG_FILE" 2>&1 || log "tailscale serve failed or timed out"
+    else
+      tailscale serve --bg --https="$HOST_HTTPS_PORT" "http://${HOST_PROXY_HOST}:${HOST_PROXY_PORT}" >>"$LOG_FILE" 2>&1 || log "tailscale serve failed"
+    fi
     printf '%s\n' "$HOST_HTTPS_PORT" >"$SERVE_PORT_FILE"
   else
     log "tailscale CLI not found; skipping tailscale serve publish step"

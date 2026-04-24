@@ -32,27 +32,13 @@ var p = e(n(), 1),
     { value: `local`, label: `Work locally` },
     { value: `remote`, label: `Connect to remote host` },
   ],
-  P = [],
-  Q = [`gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex`, `gpt-5.3-codex-spark`, `gpt-5.2`],
+  P = [`gpt-oss:120b`, `qwen3.5:9.7b`, `qwen3.5:122b`],
+  O = [`gpt-5.4`],
   $ = `codex-managed`,
-  ee = `tailscale-websocket`,
-  te = `/Users/mrttas/Applications/Local LLM Console.app/Contents/Resources/local-llm-console/config/local-model-catalog.json`,
-  re = `/Users/mrttas/.codex-local-desktop/config.toml`;
+  ee = `tailscale-websocket`;
 
 function v(e, t = ``, n = ``) {
   return typeof e == `string` && e.trim().length > 0 ? e.trim() : t || n;
-}
-
-function normalizeProvider(e) {
-  return e === `openai` || e === `codex` ? `codex` : e;
-}
-
-function missingRuntimeSettingsMessage(e) {
-  if (e === `ollama`)
-    return `Ollama is selected, but no local Ollama model was found. Install and start Ollama, then pull or select a model, or choose Codex Cloud.`;
-  if (e === `lmstudio`)
-    return `LM Studio is selected, but no local LM Studio model was found. Start LM Studio with a loaded model, or choose Codex Cloud.`;
-  return `Provider, model, and reasoning effort are required. Local providers also require a catalog path.`;
 }
 
 function b(e) {
@@ -60,11 +46,57 @@ function b(e) {
 }
 
 function N(e) {
-  return e === ee || e === `tailscale` ? ee : ee;
+  return e === `tailscale` ? `tailscale` : `tailscale`;
 }
 
 function x(e) {
   return e === !0 || e === `true` || e === `on` ? `on` : `off`;
+}
+
+function z(e) {
+  return e === `lmstudio`
+    ? `lmstudio`
+    : e === `codex` || e === `openai`
+      ? `codex`
+      : `ollama`;
+}
+
+function B(e) {
+  return z(e) === `codex` ? O : P;
+}
+
+function Q(e) {
+  return z(e) === `codex` ? `gpt-5.4` : `gpt-oss:120b`;
+}
+
+function iee(e) {
+  return z(e) !== `codex`;
+}
+
+function deriveLocalCatalogPath(e, t = ``) {
+  let n = v(t, ``);
+  if (n.length > 0) return n;
+  let r = v(e, ``).replace(/\\/g, `/`);
+  if (!r.endsWith(`/config.toml`)) return ``;
+  let i = r.slice(0, -`/config.toml`.length),
+    a = i.lastIndexOf(`/`);
+  if (a <= 0) return ``;
+  let o = i.slice(0, a),
+    s = i.slice(a + 1);
+  return s.length === 0 ? `` : `${o}/${s}-models.json`;
+}
+
+function K(e, t) {
+  let n = v(t, ``),
+    r = B(e),
+    i = z(e) === `codex` ? P : O;
+  return n.length === 0
+    ? Q(e)
+    : r.includes(n)
+      ? n
+      : i.includes(n)
+        ? Q(e)
+        : n;
 }
 
 function S(e, t = `443`) {
@@ -77,11 +109,17 @@ function S(e, t = `443`) {
 }
 
 function C(e) {
-  let t = normalizeProvider(v(e?.model_provider, v(e?.oss_provider, `ollama`)));
+  let t = z(
+    v(
+      e?.local_llm_console_provider,
+      e?.model_provider,
+      v(e?.oss_provider, `ollama`),
+    ),
+  );
   return {
     launchMode: `local`,
     provider: t,
-    model: v(e?.model, t === `codex` ? `gpt-5.4` : ``),
+    model: K(t, e?.model),
     reasoning: v(e?.model_reasoning_effort, `medium`),
     catalogPath: v(e?.model_catalog_json, ``),
     remoteTransport: N(e?.local_llm_console_remote_transport),
@@ -102,13 +140,10 @@ function L(e) {
 }
 
 function T(e, t) {
-  let n = t === `codex` ? Q : P,
-    r = n.map((e) => ({ value: e, label: e }));
-  if (t !== `codex` && r.length === 0 && (e == null || e.length === 0))
-    return [{ value: ``, label: `No local models found` }];
-  return e != null && e.length > 0 && !n.includes(e)
-    ? [{ value: e, label: `${e} (current)` }, ...r]
-    : r;
+  let n = B(e).map((e) => ({ value: e, label: e }));
+  return t != null && t.length > 0 && !B(e).includes(t)
+    ? [{ value: t, label: `${t} (current)` }, ...n]
+    : n;
 }
 
 function readLocalLlmConsoleSessionState() {
@@ -480,15 +515,19 @@ function RuntimeSettingsContent(props = {}) {
     [ae, oe] = (0, p.useState)(null),
     se = e?.configWriteTarget?.filePath ?? ``,
     ce = e?.configWriteTarget?.expectedVersion ?? null,
-    le = (0, p.useMemo)(() => T(w.model, w.provider), [w.model, w.provider]),
-    ue = localSignature(t) !== localSignature(w),
-    de = remoteSignature(t) !== remoteSignature(w),
+    ye = (0, p.useMemo)(
+      () => ({ ...t, catalogPath: deriveLocalCatalogPath(se, t.catalogPath) }),
+      [se, t.catalogPath, L(t)],
+    ),
+    le = (0, p.useMemo)(() => T(w.provider, w.model), [w.provider, w.model]),
+    ue = localSignature(ye) !== localSignature(w),
+    de = remoteSignature(ye) !== remoteSignature(w),
     fe = ne ? de : ue,
     pe =
       w.provider.trim().length === 0 ||
       w.model.trim().length === 0 ||
       w.reasoning.trim().length === 0 ||
-      (w.provider !== `codex` && w.catalogPath.trim().length === 0),
+      (iee(w.provider) && w.catalogPath.trim().length === 0),
     me = !hasValidRemoteHostUrl(w.remoteUrl),
     he =
       w.hostListenUrl.trim().length === 0 ||
@@ -497,19 +536,20 @@ function RuntimeSettingsContent(props = {}) {
     qe = isCurrentRemoteSessionConnected(),
     _e = qe ? `remote` : `local`,
     ve = hasValidRemoteHostUrl(w.remoteUrl),
+    persistentHostStatus = w.hostMode === `on` && !he && D == null,
     be = ne
       ? (_e === `remote` && me) || (w.hostMode === `on` && he)
       : pe,
     xe = async (e, n = {}) => {
       let W = n.nextState ?? w,
         K = n.hostAction ?? `reload`,
-        z = n.scope === `remote`,
+        isRemoteScope = n.scope === `remote`,
         a = W.provider.trim(),
-        B = a === `codex` ? `openai` : a,
+        providerValue = z(a) === `codex` ? `openai` : a,
         o = W.model.trim(),
         s = W.reasoning.trim(),
         c = W.catalogPath.trim(),
-        D = a === `codex` && c.length === 0 ? te : c,
+        catalogValue = z(a) === `codex` ? `` : c,
         l = `tailscale`,
         q = W.remoteUrl.trim(),
         H = W.remoteAuthTokenEnv.trim(),
@@ -519,19 +559,21 @@ function RuntimeSettingsContent(props = {}) {
         V = W.hostHttpsPort.trim(),
         I = Number.parseInt(V, 10);
       if (
-        !z &&
+        !isRemoteScope &&
         (a.length === 0 ||
           o.length === 0 ||
           s.length === 0 ||
-          (a !== `codex` && c.length === 0))
+          (iee(a) && c.length === 0))
       ) {
         U({
           tone: `error`,
-          text: missingRuntimeSettingsMessage(a),
+          text: iee(a)
+            ? `Provider, model, reasoning effort, and catalog path are all required for local settings.`
+            : `Provider, model, and reasoning effort are all required for Codex Cloud settings.`,
         });
         return !1;
       }
-      if (z && e === `remote` && !hasValidRemoteHostUrl(q)) {
+      if (isRemoteScope && e === `remote` && !hasValidRemoteHostUrl(q)) {
         U({
           tone: `error`,
           text: `Please enter a valid remote host.`,
@@ -539,7 +581,7 @@ function RuntimeSettingsContent(props = {}) {
         return !1;
       }
       if (
-        z &&
+        isRemoteScope &&
         R &&
         (Y.length === 0 ||
           !/^[0-9]+$/.test(V) ||
@@ -557,40 +599,65 @@ function RuntimeSettingsContent(props = {}) {
         text: n.savingText ?? `Saving runtime configuration...`,
       });
       try {
-        let edits = [
-          { keyPath: `local_llm_console_mode`, value: z ? e : `local` },
-          { keyPath: `local_llm_console_remote_transport`, value: l },
-          { keyPath: `local_llm_console_remote_url`, value: q },
-          {
-            keyPath: `local_llm_console_remote_auth_token_env`,
-            value: H,
-          },
-          { keyPath: `local_llm_console_host_enabled`, value: R },
-          { keyPath: `local_llm_console_host_transport`, value: G },
-          { keyPath: `local_llm_console_host_listen_url`, value: Y },
-          { keyPath: `local_llm_console_host_https_port`, value: I },
-        ];
-        z ||
-          edits.unshift(
-            { keyPath: `model_provider`, value: B },
-            { keyPath: `oss_provider`, value: a === `codex` ? `ollama` : a },
+        await i.mutateAsync({
+          filePath: se || null,
+          expectedVersion: ce,
+          edits: [
+            { keyPath: `local_llm_console_provider`, value: a },
+            { keyPath: `model_provider`, value: providerValue },
+            { keyPath: `oss_provider`, value: providerValue },
             { keyPath: `model`, value: o },
             { keyPath: `model_reasoning_effort`, value: s },
-            { keyPath: `model_catalog_json`, value: D },
-          );
-        await i.mutateAsync({
-          filePath: se || re,
-          expectedVersion: se ? ce : null,
-          edits,
+            { keyPath: `model_catalog_json`, value: catalogValue },
+            { keyPath: `local_llm_console_mode`, value: `local` },
+            {
+              keyPath: `local_llm_console_remote_transport`,
+              value: l,
+            },
+            { keyPath: `local_llm_console_remote_url`, value: q },
+            {
+              keyPath: `local_llm_console_remote_auth_token_env`,
+              value: H,
+            },
+            {
+              keyPath: `local_llm_console_host_enabled`,
+              value: R,
+            },
+            {
+              keyPath: `local_llm_console_host_transport`,
+              value: G,
+            },
+            {
+              keyPath: `local_llm_console_host_listen_url`,
+              value: Y,
+            },
+            {
+              keyPath: `local_llm_console_host_https_port`,
+              value: I,
+            },
+          ],
         });
-        await r();
-        E((t) => ({ ...t, launchMode: `local` }));
+        E((t) => ({ ...W, launchMode: `local` }));
         ie({
-          currentMode: z ? _e : b(e),
+          currentMode: isRemoteScope ? _e : b(e),
           hasRemoteSettings: q.length > 0,
           remoteUrl: q,
         });
-        if (z)
+        if (!isRemoteScope) {
+          U({
+            tone: `success`,
+            text: `Saved runtime configuration. Restarting Local LLM Console...`,
+          });
+          if (
+            typeof window !== `undefined` &&
+            typeof window.__switchLocalLLMConsoleMode === `function`
+          ) {
+            await window.__switchLocalLLMConsoleMode(`local`);
+          }
+          return !0;
+        }
+        await r();
+        if (isRemoteScope)
           try {
             await applyLocalLlmConsoleHostService(K);
           } catch (e) {
@@ -605,17 +672,15 @@ function RuntimeSettingsContent(props = {}) {
           }
         U({
           tone: `success`,
-          text: n.successText ?? (z ? `Saved remote settings.` : `Saved runtime configuration.`),
+          text:
+            n.successText ??
+            (isRemoteScope ? `Saved remote settings.` : `Saved runtime configuration.`),
         });
         return !0;
-      } catch (e) {
+      } catch {
         U({
           tone: `error`,
-          text:
-            n.errorText ??
-            (e instanceof Error && e.message.trim().length > 0
-              ? e.message
-              : `Unable to save runtime configuration.`),
+          text: n.errorText ?? `Unable to save runtime configuration.`,
         });
         return !1;
       }
@@ -683,7 +748,7 @@ function RuntimeSettingsContent(props = {}) {
         provider: t.provider,
         model: t.model,
         reasoning: t.reasoning,
-        catalogPath: t.catalogPath,
+        catalogPath: ye.catalogPath,
       }));
       oe(null);
       U({
@@ -694,12 +759,12 @@ function RuntimeSettingsContent(props = {}) {
     Le = () => {
       E((e) => ({
         ...e,
-        launchMode: t.launchMode,
-        remoteUrl: t.remoteUrl,
-        remoteAuthTokenEnv: t.remoteAuthTokenEnv,
-        hostMode: t.hostMode,
-        hostListenUrl: t.hostListenUrl,
-        hostHttpsPort: t.hostHttpsPort,
+        launchMode: ye.launchMode,
+        remoteUrl: ye.remoteUrl,
+        remoteAuthTokenEnv: ye.remoteAuthTokenEnv,
+        hostMode: ye.hostMode,
+        hostListenUrl: ye.hostListenUrl,
+        hostHttpsPort: ye.hostHttpsPort,
       }));
       oe(null);
       U({
@@ -930,10 +995,12 @@ function RuntimeSettingsContent(props = {}) {
               }),
               (0, m.jsx)(TileGroup, {
                 position:
-                  (w.hostMode === `on` && he) || D != null ? `middle` : `bottom`,
+                  (w.hostMode === `on` && he) || D != null || persistentHostStatus
+                    ? `middle`
+                    : `bottom`,
                 children: (0, m.jsx)(Te, {}),
               }),
-              (w.hostMode === `on` && he) || D != null
+              (w.hostMode === `on` && he) || D != null || persistentHostStatus
                 ? (0, m.jsx)(TileGroup, {
                     position: `bottom`,
                     children: (0, m.jsxs)(`div`, {
@@ -943,6 +1010,12 @@ function RuntimeSettingsContent(props = {}) {
                           ? (0, m.jsx)(M, {
                               tone: `error`,
                               text: `Host mode requires a listen URL and a valid Tailscale HTTPS port.`,
+                            })
+                          : null,
+                        persistentHostStatus
+                          ? (0, m.jsx)(M, {
+                              tone: `info`,
+                              text: `Local Tailscale server is running.`,
                             })
                           : null,
                         D != null ? (0, m.jsx)(M, { tone: D.tone, text: D.text }) : null,
@@ -959,34 +1032,30 @@ function RuntimeSettingsContent(props = {}) {
                 position: `top`,
                 children: [
                   (0, m.jsx)(c, {
-                    label: `Local provider`,
-                    description: `Used when this profile runs locally or hosts remote sessions from this machine.`,
+                    label: `Provider`,
+                    description: `Used when this profile runs locally or through Codex Cloud.`,
                     control: (0, m.jsx)(`div`, {
                       className: `w-[28rem] max-w-full`,
                       children: (0, m.jsx)(F, {
-                        ariaLabel: `Local provider`,
+                        ariaLabel: `Provider`,
                         options: g,
                         value: w.provider,
                         onChange: (e) => {
-                          E((t) => ({
-                            ...t,
-                            provider: e,
-                            model:
-                              e === `codex`
-                                ? Q.includes(t.model)
-                                  ? t.model
-                                  : `gpt-5.4`
-                                : P.includes(t.model)
-                                  ? t.model
-                                  : ``,
-                          }));
+                          E((t) => {
+                            let n = z(e);
+                            return {
+                              ...t,
+                              provider: n,
+                              model: K(n, t.model),
+                            };
+                          });
                         },
                       }),
                     }),
                   }),
                   (0, m.jsx)(c, {
                     label: `Default model`,
-                    description: `The model ID used when this profile runs locally.`,
+                    description: `The model ID used for the selected provider.`,
                     control: (0, m.jsx)(`div`, {
                       className: `w-[28rem] max-w-full`,
                       children: (0, m.jsx)(F, {
@@ -1026,15 +1095,12 @@ function RuntimeSettingsContent(props = {}) {
                       className: `ml-5 w-[32rem] max-w-full`,
                       children: (0, m.jsx)(k, {
                         value: w.catalogPath,
-                        disabled: w.provider === `codex`,
+                        disabled: z(w.provider) === `codex`,
                         onChange: (e) => {
                           let t = e.target.value;
                           E((e) => ({ ...e, catalogPath: t }));
                         },
-                        placeholder:
-                          w.provider === `codex`
-                            ? `Not used for Codex Cloud`
-                            : `/home/you/.codex-local-desktop-models.json`,
+                        placeholder: `/home/you/.codex-local-desktop-models.json`,
                       }),
                     }),
                   }),
@@ -1078,7 +1144,9 @@ function RuntimeSettingsContent(props = {}) {
                     be
                       ? (0, m.jsx)(M, {
                           tone: `error`,
-                          text: missingRuntimeSettingsMessage(w.provider),
+                          text: iee(w.provider)
+                            ? `Provider, model, reasoning effort, and catalog path are all required before saving local settings.`
+                            : `Provider, model, and reasoning effort are all required before saving Codex Cloud settings.`,
                         })
                       : null,
                     D != null ? (0, m.jsx)(M, { tone: D.tone, text: D.text }) : null,
@@ -1134,10 +1202,10 @@ function RuntimeSettingsContent(props = {}) {
   }, [_e, ae]);
 
   (0, p.useEffect)(() => {
-    E(t);
+    E(ye);
     U(null);
     oe(null);
-  }, [L(t)]);
+  }, [L(ye)]);
 
   if (O) return Oe;
   return (0, m.jsx)(s, {

@@ -24,8 +24,8 @@ export CODEX_DESKTOP_ICON_NAME="${CODEX_DESKTOP_ICON_NAME:-local-ai-console-grad
 export CHROME_DESKTOP="${CHROME_DESKTOP:-local-ai-console.desktop}"
 export CODEX_DESKTOP_EXPECTED_TITLE="${CODEX_DESKTOP_EXPECTED_TITLE:-Local LLM Console}"
 export CODEX_DESKTOP_LOCAL_PROFILE_VERSION="v17"
-export CODEX_DESKTOP_LOCAL_RUNTIME_VERSION="v15"
-export CODEX_DESKTOP_LOCAL_RUNTIME_PATCH_VERSION="v11"
+export CODEX_DESKTOP_LOCAL_RUNTIME_VERSION="v16"
+export CODEX_DESKTOP_LOCAL_RUNTIME_PATCH_VERSION="v12"
 export CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION="v17"
 export XDG_CONFIG_HOME="$HOME/.config/local-ai-console/xdg-config-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}"
 export XDG_CACHE_HOME="$HOME/.cache/local-ai-console/xdg-cache-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}"
@@ -232,6 +232,11 @@ replace_optional(
 )
 replace_optional(
     bootstrap_bundle,
+    "n.app.setName(e.L(x))",
+    "n.app.setName(`Local LLM Console`)",
+)
+replace_optional(
+    bootstrap_bundle,
     "message:`${t.app.getName()} failed to start.`",
     "message:`Local LLM Console failed to start.`",
 )
@@ -261,6 +266,11 @@ replace_once(
     "_&&O.on(`close`,e=>{this.persistPrimaryWindowBounds(O,d);let t=this.getPrimaryWindows(d).some(e=>e!==O);if(process.platform===`win32`&&d===`local`&&!this.isAppQuitting&&this.options.canHideLastLocalWindowToTray?.()===!0&&!t){e.preventDefault(),O.hide();return}if(process.platform===`darwin`&&!this.isAppQuitting&&!t){if(O.isFullScreen()){e.preventDefault(),O.once(`leave-full-screen`,()=>{O.isDestroyed()||O.hide()}),O.setFullScreen(!1);return}e.preventDefault(),O.hide()}});",
     "_&&O.on(`close`,e=>{this.persistPrimaryWindowBounds(O,d);let n=this.getPrimaryWindows(d).some(e=>e!==O);if(process.platform===`win32`&&d===`local`&&!this.isAppQuitting&&this.options.canHideLastLocalWindowToTray?.()===!0&&!n){e.preventDefault(),O.hide();return}if(process.platform!==`darwin`&&process.platform!==`win32`&&d===`local`&&!this.isAppQuitting&&!n&&!this.options.disableQuitConfirmationPrompt&&!this.options.quitState?.canQuitWithoutPrompt()){e.preventDefault();let r=`Local LLM Console`;if(t.dialog.showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`],defaultId:0,cancelId:1,noLink:!0,title:`Quit ${r}?`,message:``,detail:`Any local threads running on this machine will be interrupted and scheduled automations won't run`})!==0){Promise.resolve().then(()=>{O.isDestroyed()||(O.show(),O.focus())});return}this.options.quitState?.markQuitApproved(),this.markAppQuitting(),Promise.resolve().then(()=>{O.isDestroyed()||O.close()});return}if(process.platform===`darwin`&&!this.isAppQuitting&&!n){if(O.isFullScreen()){e.preventDefault(),O.once(`leave-full-screen`,()=>{O.isDestroyed()||O.hide()}),O.setFullScreen(!1);return}e.preventDefault(),O.hide()}});",
     error_message="Local desktop runtime patch failed: last-window close confirmation snippet not found",
+)
+replace_optional(
+    main_bundle,
+    "v&&k.on(`close`,e=>{this.persistPrimaryWindowBounds(k,f);let t=this.getPrimaryWindows(f).some(e=>e!==k);if(process.platform===`win32`&&f===`local`&&!this.isAppQuitting&&this.options.canHideLastLocalWindowToTray?.()===!0&&!t){e.preventDefault(),k.hide();return}if(process.platform===`darwin`&&!this.isAppQuitting&&!t){if(k.isFullScreen()){e.preventDefault(),k.once(`leave-full-screen`,()=>{k.isDestroyed()||k.hide()}),k.setFullScreen(!1);return}e.preventDefault(),k.hide()}});",
+    "v&&k.on(`close`,e=>{this.persistPrimaryWindowBounds(k,f);let t=this.getPrimaryWindows(f).some(e=>e!==k);if(process.platform===`win32`&&f===`local`&&!this.isAppQuitting&&this.options.canHideLastLocalWindowToTray?.()===!0&&!t){e.preventDefault(),k.hide();return}if(process.platform!==`darwin`&&process.platform!==`win32`&&f===`local`&&!this.isAppQuitting&&!t&&!this.options.disableQuitConfirmationPrompt&&!this.options.quitState?.canQuitWithoutPrompt()){e.preventDefault();let r=`Local LLM Console`;if(n.dialog.showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`],defaultId:0,cancelId:1,noLink:!0,title:`Quit ${r}?`,message:``,detail:`Any local threads running on this machine will be interrupted and scheduled automations won't run`})!==0){Promise.resolve().then(()=>{k.isDestroyed()||(k.show(),k.focus())});return}this.options.quitState?.markQuitApproved(),this.markAppQuitting(),Promise.resolve().then(()=>{k.isDestroyed()||k.close()});return}if(process.platform===`darwin`&&!this.isAppQuitting&&!t){if(k.isFullScreen()){e.preventDefault(),k.once(`leave-full-screen`,()=>{k.isDestroyed()||k.hide()}),k.setFullScreen(!1);return}e.preventDefault(),k.hide()}});",
 )
 replace_once(
     main_bundle,
@@ -348,11 +358,21 @@ replace_once(
     "webPreferences:T});O.setTitle(`Local LLM Console`);O.on(`page-title-updated`,e=>{e.preventDefault(),O.isDestroyed()||O.setTitle(`Local LLM Console`)});let k=O.webContents",
     error_message="Local desktop runtime patch failed: page-title override snippet not found",
 )
+replace_optional(
+    main_bundle,
+    "webPreferences:E}),A=k.webContents",
+    "webPreferences:E});k.setTitle(`Local LLM Console`);k.on(`page-title-updated`,e=>{e.preventDefault(),k.isDestroyed()||k.setTitle(`Local LLM Console`)});let A=k.webContents",
+)
 replace_once(
     main_bundle,
     "O.once(`ready-to-show`,()=>{vy().info(`window ready-to-show`,{safe:{hostId:d,windowId:O.id,webContentsId:O.webContents.id,appearance:c,startupElapsedMs:Date.now()-m}})})",
     "O.once(`ready-to-show`,()=>{O.setTitle(`Local LLM Console`),vy().info(`window ready-to-show`,{safe:{hostId:d,windowId:O.id,webContentsId:O.webContents.id,appearance:c,startupElapsedMs:Date.now()-m}})})",
     error_message="Local desktop runtime patch failed: ready-to-show title hook snippet not found",
+)
+replace_optional(
+    main_bundle,
+    "k.once(`ready-to-show`,()=>{KC().info(`window ready-to-show`,{safe:{hostId:f,windowId:k.id,webContentsId:k.webContents.id,appearance:l,startupElapsedMs:Date.now()-h}})})",
+    "k.once(`ready-to-show`,()=>{k.setTitle(`Local LLM Console`),KC().info(`window ready-to-show`,{safe:{hostId:f,windowId:k.id,webContentsId:k.webContents.id,appearance:l,startupElapsedMs:Date.now()-h}})})",
 )
 replace_once(
     main_bundle,
@@ -365,6 +385,11 @@ replace_once(
     "let o=t.app.getName();if(t.dialog.showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`],defaultId:0,cancelId:1,noLink:!0,title:`Quit ${o}?`,message:`Quit ${o}?`,detail:`Any local threads running on this machine will be interrupted and scheduled automations won't run`})!==0){a.preventDefault();return}",
     "let E=`Local LLM Console`;if(t.dialog.showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`],defaultId:0,cancelId:1,noLink:!0,title:`Quit ${E}?`,message:``,detail:`Any local threads running on this machine will be interrupted and scheduled automations won't run`})!==0){a.preventDefault(),Promise.resolve().then(()=>{m||(i.showLastActivePrimaryWindow()||o(`local`))});return}",
     error_message="Local desktop runtime patch failed: quit confirmation title snippet not found",
+)
+replace_optional(
+    main_bundle,
+    "n.app.on(`before-quit`,o=>{let s=y_(),c=t.Wn().some(e=>e.status===`ACTIVE`);if(e||i.canQuitWithoutPrompt()||r||!s&&!c){g=!0,a.markAppQuitting();return}let l=n.app.getName();if(n.dialog.showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`],defaultId:0,cancelId:1,noLink:!0,title:`Quit ${l}?`,message:`Quit ${l}?`,detail:Mb({hasInProgressLocalConversation:s,hasEnabledAutomations:c})})!==0){o.preventDefault();return}i.markQuitApproved(),g=!0,a.markAppQuitting()})",
+    "n.app.on(`before-quit`,o=>{let s=y_(),c=t.Wn().some(e=>e.status===`ACTIVE`);if(e||i.canQuitWithoutPrompt()||r||!s&&!c){g=!0,a.markAppQuitting();return}let l=`Local LLM Console`;if(n.dialog.showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`],defaultId:0,cancelId:1,noLink:!0,title:`Quit ${l}?`,message:``,detail:Mb({hasInProgressLocalConversation:s,hasEnabledAutomations:c}).replaceAll(`Codex`,`Local LLM Console`)})!==0){o.preventDefault();return}i.markQuitApproved(),g=!0,a.markAppQuitting()})",
 )
 replace_once(
     main_bundle,
