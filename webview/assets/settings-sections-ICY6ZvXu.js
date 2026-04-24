@@ -4,7 +4,6 @@ var e = `general-settings`,
   })({}),
   n = [
     { slug: `general-settings` },
-    { slug: `appearance` },
     { slug: `connections` },
     { slug: `agent` },
     { slug: `local-models` },
@@ -12,6 +11,7 @@ var e = `general-settings`,
     { slug: `computer-use` },
     { slug: `mcp-settings` },
     { slug: `data-controls` },
+    { slug: `appearance` },
   ];
 
 export { n, t as r, e as t };

@@ -39,12 +39,17 @@
     return hasPrimary && hasAction;
   }
 
-  function currentWindowHasRemoteHost() {
+  function currentWindowHostId() {
     try {
-      return new URL(window.location.href).searchParams.get(`hostId`)?.trim().length > 0;
+      return new URL(window.location.href).searchParams.get(`hostId`)?.trim() || ``;
     } catch {
-      return false;
+      return ``;
     }
+  }
+
+  function currentWindowHasRemoteHost() {
+    const hostId = currentWindowHostId().toLowerCase();
+    return hostId.length > 0 && hostId !== `local`;
   }
 
   function openLocalSettings(section = `general-settings`) {

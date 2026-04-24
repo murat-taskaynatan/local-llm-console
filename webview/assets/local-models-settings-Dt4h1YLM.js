@@ -9,7 +9,7 @@ import { i as q, n as H, t as R } from "./check-md-YtZX6wSV.js";
 import { u as u, y as d } from "./config-queries-jUrDLWnn.js";
 import { t as G } from "./settings-shared-DkvLL00j.js";
 import { o as Y } from "./use-model-settings-ldiRRtPt.js";
-import { n as X } from "./send-app-server-request-BTldVjKF.js";
+import { t as X } from "./send-app-server-request-BTldVjKF.js";
 
 var p = e(n(), 1),
   m = r(),
@@ -166,10 +166,13 @@ function normalizeRemoteSessionUrl(e) {
 
 function hasValidRemoteHostUrl(e) {
   try {
-    let t = new URL(normalizeRemoteSessionUrl(e)).hostname.trim().toLowerCase();
+    let n = new URL(normalizeRemoteSessionUrl(e)),
+      t = n.hostname.trim().toLowerCase();
     return (
       t.length > 0 &&
-      ![`yours.net`, `your-host.tailnet.ts.net`].includes(t)
+      ![`yours.net`, `your-host.tailnet.ts.net`].includes(t) &&
+      n.protocol === `wss:` &&
+      t.endsWith(`.ts.net`)
     );
   } catch {
     return !1;
@@ -190,13 +193,18 @@ function getCurrentSessionHostId() {
   }
 }
 
+function isRemoteSessionHostId(e) {
+  let t = v(e, ``).toLowerCase();
+  return t.length > 0 && t !== `local`;
+}
+
 function isCurrentRemoteSessionConnected() {
   if (
     typeof window !== `undefined` &&
     typeof window.__isLocalLLMConsoleRemoteConnected === `function`
   )
     return window.__isLocalLLMConsoleRemoteConnected() === !0;
-  return getCurrentSessionHostId().length > 0;
+  return isRemoteSessionHostId(getCurrentSessionHostId());
 }
 
 function buildRemoteSessionRecord(e) {
@@ -244,7 +252,10 @@ function reloadCurrentSessionForHost(e) {
 async function switchLocalLlmConsoleCurrentSession(e, t = {}) {
   let n = b(e);
   if (n === `remote`) {
-    let e = buildRemoteSessionRecord(v(t.remoteUrl, readLocalLlmConsoleSessionState()?.remoteUrl, ``)),
+    let r = v(t.remoteUrl, readLocalLlmConsoleSessionState()?.remoteUrl, ``);
+    if (!hasValidRemoteHostUrl(r))
+      throw new Error(`Please enter a valid remote host.`);
+    let e = buildRemoteSessionRecord(r),
       n = mergeManagedRemoteSessionConnections(
         await loadManagedRemoteSessionConnections(),
         e,
@@ -438,13 +449,13 @@ function RuntimeSettingsContent(props = {}) {
     [re, ie] = (0, p.useState)(() => {
       let e = readLocalLlmConsoleSessionState();
       return {
-        currentMode: b(e?.currentMode ?? t.launchMode),
+        currentMode: isCurrentRemoteSessionConnected() ? `remote` : `local`,
         hasRemoteSettings: Boolean(e?.hasRemoteSettings) || t.remoteUrl.trim().length > 0,
         remoteUrl: v(e?.remoteUrl, t.remoteUrl),
       };
     }),
     [connectionChoice, setConnectionChoice] = (0, p.useState)(() =>
-      b(readLocalLlmConsoleSessionState()?.currentMode ?? t.launchMode),
+      isCurrentRemoteSessionConnected() ? `remote` : `local`,
     ),
     [ae, oe] = (0, p.useState)(null),
     se = e?.configWriteTarget?.filePath ?? ``,
@@ -463,25 +474,27 @@ function RuntimeSettingsContent(props = {}) {
       w.hostListenUrl.trim().length === 0 ||
       !/^[0-9]+$/.test(w.hostHttpsPort.trim()) ||
       Number.parseInt(w.hostHttpsPort.trim(), 10) <= 0,
-    _e = b(ae ?? re.currentMode ?? t.launchMode),
     qe = isCurrentRemoteSessionConnected(),
-    ve = Boolean(re.hasRemoteSettings) || hasValidRemoteHostUrl(w.remoteUrl),
+    _e = qe ? `remote` : `local`,
+    ve = hasValidRemoteHostUrl(w.remoteUrl),
     be = ne
       ? (_e === `remote` && me) || (w.hostMode === `on` && he)
       : pe,
     xe = async (e, n = {}) => {
-      let z = n.scope === `remote`,
-        a = w.provider.trim(),
-        o = w.model.trim(),
-        s = w.reasoning.trim(),
-        c = w.catalogPath.trim(),
+      let W = n.nextState ?? w,
+        K = n.hostAction ?? `reload`,
+        z = n.scope === `remote`,
+        a = W.provider.trim(),
+        o = W.model.trim(),
+        s = W.reasoning.trim(),
+        c = W.catalogPath.trim(),
         l = `tailscale`,
-        q = w.remoteUrl.trim(),
-        H = w.remoteAuthTokenEnv.trim(),
-        R = w.hostMode === `on`,
+        q = W.remoteUrl.trim(),
+        H = W.remoteAuthTokenEnv.trim(),
+        R = W.hostMode === `on`,
         G = `tailscale`,
-        Y = w.hostListenUrl.trim(),
-        V = w.hostHttpsPort.trim(),
+        Y = W.hostListenUrl.trim(),
+        V = W.hostHttpsPort.trim(),
         I = Number.parseInt(V, 10);
       if (
         !z &&
@@ -568,7 +581,7 @@ function RuntimeSettingsContent(props = {}) {
         });
         if (z)
           try {
-            await applyLocalLlmConsoleHostService(`reload`);
+            await applyLocalLlmConsoleHostService(K);
           } catch (e) {
             U({
               tone: `error`,
@@ -625,6 +638,29 @@ function RuntimeSettingsContent(props = {}) {
               : `Unable to switch the current session.`,
         });
       }
+    },
+    Ne = async (e) => {
+      if (e === w.hostMode) return;
+      let t = w.hostMode,
+        n = { ...w, hostMode: e };
+      E(n);
+      oe(null);
+      if (e === `on` && he) {
+        E((e) => ({ ...e, hostMode: t }));
+        U({
+          tone: `error`,
+          text: `Host mode requires a listen URL and a valid Tailscale HTTPS port.`,
+        });
+        return;
+      }
+      let r = await xe(w.launchMode, {
+        scope: `remote`,
+        hostAction: e === `on` ? `start` : `stop`,
+        nextState: n,
+        savingText: e === `on` ? `Starting local server...` : `Stopping local server...`,
+        successText: e === `on` ? `Local server started.` : `Local server stopped.`,
+      });
+      r || E((e) => ({ ...e, hostMode: t }));
     },
     Ce = () => {
       E((e) => ({
@@ -714,36 +750,15 @@ function RuntimeSettingsContent(props = {}) {
                     label: `Current connection`,
                     description: `Switch this session between local and remote.`,
                     control: (0, m.jsx)(`div`, {
-                      className: `flex w-[32rem] max-w-full items-center gap-2`,
-                      children: (0, m.jsxs)(m.Fragment, {
-                        children: [
-                          (0, m.jsx)(`div`, {
-                            className: `w-[28rem] max-w-full`,
-                            children: (0, m.jsx)(F, {
-                              ariaLabel: `Current connection`,
-                              options: J,
-                              value: connectionChoice,
-                              onChange: (e) => {
-                                setConnectionChoice(b(e));
-                              },
-                              disabled: i.isPending || ae !== null,
-                            }),
-                          }),
-                          (0, m.jsx)(l, {
-                            color: `secondary`,
-                            size: `toolbar`,
-                            className: `w-auto`,
-                            disabled:
-                              i.isPending ||
-                              ae !== null ||
-                              connectionChoice === _e ||
-                              (connectionChoice === `remote` && !ve),
-                            onClick: async () => {
-                              await Se(connectionChoice);
-                            },
-                            children: ae !== null ? `Connecting...` : `Connect`,
-                          }),
-                        ],
+                      className: `w-[28rem] max-w-full`,
+                      children: (0, m.jsx)(F, {
+                        ariaLabel: `Current connection`,
+                        options: J,
+                        value: connectionChoice,
+                        onChange: (e) => {
+                          setConnectionChoice(b(e));
+                        },
+                        disabled: i.isPending || ae !== null,
                       }),
                     }),
                   }),
@@ -758,17 +773,44 @@ function RuntimeSettingsContent(props = {}) {
                         className: `text-sm text-token-text-secondary`,
                         children: `Use the tailnet URL that proxies your remote app-server.`,
                       }),
-                      (0, m.jsx)(`div`, {
-                        className: `w-full max-w-[56rem]`,
-                        children: (0, m.jsx)(k, {
-                          value: w.remoteUrl,
-                          disabled: i.isPending || ae !== null || connectionChoice === `local`,
-                          onChange: (e) => {
-                            let t = e.target.value;
-                            E((e) => ({ ...e, remoteUrl: t }));
-                          },
-                          placeholder: `wss://your-host.tailnet.ts.net`,
-                        }),
+                      (0, m.jsxs)(`div`, {
+                        className: `flex w-full max-w-[56rem] items-center gap-2`,
+                        children: [
+                          (0, m.jsx)(`div`, {
+                            className: `min-w-0 flex-1`,
+                            children: (0, m.jsx)(k, {
+                              value: w.remoteUrl,
+                              disabled: i.isPending || ae !== null || connectionChoice === `local`,
+                              onChange: (e) => {
+                                let t = e.target.value;
+                                E((e) => ({ ...e, remoteUrl: t }));
+                              },
+                              placeholder: `wss://your-host.tailnet.ts.net`,
+                            }),
+                          }),
+                          (0, m.jsx)(l, {
+                            color: `secondary`,
+                            size: `toolbar`,
+                            className: `w-auto shrink-0`,
+                            disabled:
+                              i.isPending ||
+                              ae !== null ||
+                              (connectionChoice === `remote`
+                                ? !ve || qe
+                                : !qe),
+                            onClick: async () => {
+                              await Se(connectionChoice);
+                            },
+                            children:
+                              ae !== null
+                                ? connectionChoice === `local` && qe
+                                  ? `Disconnecting...`
+                                  : `Connecting...`
+                                : connectionChoice === `local` && qe
+                                  ? `Disconnect`
+                                  : `Connect`,
+                          }),
+                        ],
                       }),
                       connectionChoice === `remote` &&
                       D?.tone === `error` &&
@@ -822,8 +864,8 @@ function RuntimeSettingsContent(props = {}) {
                         options: j,
                         value: w.hostMode,
                         disabled: i.isPending || ae !== null,
-                        onChange: (e) => {
-                          E((t) => ({ ...t, hostMode: e }));
+                        onChange: async (e) => {
+                          await Ne(e);
                         },
                       }),
                     }),
@@ -872,53 +914,27 @@ function RuntimeSettingsContent(props = {}) {
                 ],
               }),
               (0, m.jsx)(TileGroup, {
-                position: `middle`,
+                position:
+                  (w.hostMode === `on` && he) || D != null ? `middle` : `bottom`,
                 children: (0, m.jsx)(Te, {}),
               }),
-              (0, m.jsx)(TileGroup, {
-                position: `bottom`,
-                children: (0, m.jsxs)(`div`, {
-                  className: `flex flex-col gap-3 px-4 py-3`,
-                  children: [
-                    (0, m.jsxs)(`div`, {
-                      className: `flex flex-wrap gap-2`,
+              (w.hostMode === `on` && he) || D != null
+                ? (0, m.jsx)(TileGroup, {
+                    position: `bottom`,
+                    children: (0, m.jsxs)(`div`, {
+                      className: `flex flex-col gap-3 px-4 py-3`,
                       children: [
-                        (0, m.jsx)(l, {
-                          color: `primary`,
-                          size: `toolbar`,
-                          className: `w-auto`,
-                          disabled: !fe || be || i.isPending || ae !== null,
-                          onClick: async () => {
-                            await xe(w.launchMode, { scope: `remote` });
-                          },
-                          children: i.isPending ? `Saving...` : `Save changes`,
-                        }),
-                        (0, m.jsx)(l, {
-                          color: `secondary`,
-                          size: `toolbar`,
-                          className: `w-auto`,
-                          disabled: !fe || i.isPending,
-                          onClick: Le,
-                          children: `Reset`,
-                        }),
+                        w.hostMode === `on` && he
+                          ? (0, m.jsx)(M, {
+                              tone: `error`,
+                              text: `Host mode requires a listen URL and a valid Tailscale HTTPS port.`,
+                            })
+                          : null,
+                        D != null ? (0, m.jsx)(M, { tone: D.tone, text: D.text }) : null,
                       ],
                     }),
-                    qe && hasValidRemoteHostUrl(w.remoteUrl)
-                      ? (0, m.jsx)(M, {
-                          tone: `info`,
-                          text: `This session is currently using the configured remote host.`,
-                        })
-                      : null,
-                    w.hostMode === `on` && he
-                      ? (0, m.jsx)(M, {
-                          tone: `error`,
-                          text: `Host mode requires a listen URL and a valid Tailscale HTTPS port before saving.`,
-                        })
-                      : null,
-                    D != null ? (0, m.jsx)(M, { tone: D.tone, text: D.text }) : null,
-                  ],
-                }),
-              }),
+                  })
+                : null,
             ],
           })
         : (0, m.jsxs)(`div`, {
@@ -1056,11 +1072,13 @@ function RuntimeSettingsContent(props = {}) {
     let e = !1,
       t = (t) => {
         if (e || !(t && typeof t == `object`)) return;
+        let n = isCurrentRemoteSessionConnected() ? `remote` : `local`;
         ie({
-          currentMode: b(t.currentMode),
+          currentMode: n,
           hasRemoteSettings: Boolean(t.hasRemoteSettings),
           remoteUrl: v(t.remoteUrl, ``),
         });
+        setConnectionChoice(n);
       };
     t(readLocalLlmConsoleSessionState());
     refreshLocalLlmConsoleSessionState().then(t).catch(() => {});
