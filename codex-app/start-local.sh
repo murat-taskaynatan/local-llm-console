@@ -505,7 +505,7 @@ if runtime_index_bundle is None:
 replace_optional(
     runtime_index_bundle,
     '"read-config":n9((e,t)=>e.readConfig(t)),"read-config-for-host":i9((e,{hostId:t,...n})=>e.sendRequest(`config/read`,n)),"refresh-remote-connection":async(e,{hostId:t})=>{',
-    '"read-config":n9((e,t)=>e.readConfig(t)),"read-config-for-host":i9((e,{hostId:t,...n})=>e.sendRequest(`config/read`,n)),"refresh-remote-connections":async()=>Qe(`refresh-remote-connections`,{params:{}}),"refresh-remote-control-connections":async()=>Qe(`refresh-remote-control-connections`,{params:{}}),"save-codex-managed-remote-ssh-connections":async(e,t)=>Qe(`save-codex-managed-remote-ssh-connections`,{params:t??{}}),"set-remote-connection-auto-connect":async(e,t)=>Qe(`set-remote-connection-auto-connect`,{params:t??{}}),"refresh-remote-connection":async(e,{hostId:t})=>{',
+    '"read-config":n9((e,t)=>e.readConfig(t)),"read-config-for-host":i9((e,{hostId:t,...n})=>e.sendRequest(`config/read`,n)),"refresh-remote-connections":async()=>Qe(`refresh-remote-connections`,{params:{}}),"refresh-remote-control-connections":async()=>Qe(`refresh-remote-control-connections`,{params:{}}),"save-codex-managed-remote-ssh-connections":async e=>Qe(`save-codex-managed-remote-ssh-connections`,{params:e??{}}),"set-remote-connection-auto-connect":async e=>Qe(`set-remote-connection-auto-connect`,{params:e??{}}),"refresh-remote-connection":async(e,{hostId:t})=>{',
 )
 
 replace_once(
@@ -1239,7 +1239,7 @@ patch_text_file(
     [
         (
             '"read-config":n9((e,t)=>e.readConfig(t)),"read-config-for-host":i9((e,{hostId:t,...n})=>e.sendRequest(`config/read`,n)),"refresh-remote-connection":async(e,{hostId:t})=>{',
-            '"read-config":n9((e,t)=>e.readConfig(t)),"read-config-for-host":i9((e,{hostId:t,...n})=>e.sendRequest(`config/read`,n)),"refresh-remote-connections":async()=>Qe(`refresh-remote-connections`,{params:{}}),"refresh-remote-control-connections":async()=>Qe(`refresh-remote-control-connections`,{params:{}}),"save-codex-managed-remote-ssh-connections":async(e,t)=>Qe(`save-codex-managed-remote-ssh-connections`,{params:t??{}}),"set-remote-connection-auto-connect":async(e,t)=>Qe(`set-remote-connection-auto-connect`,{params:t??{}}),"refresh-remote-connection":async(e,{hostId:t})=>{',
+            '"read-config":n9((e,t)=>e.readConfig(t)),"read-config-for-host":i9((e,{hostId:t,...n})=>e.sendRequest(`config/read`,n)),"refresh-remote-connections":async()=>Qe(`refresh-remote-connections`,{params:{}}),"refresh-remote-control-connections":async()=>Qe(`refresh-remote-control-connections`,{params:{}}),"save-codex-managed-remote-ssh-connections":async e=>Qe(`save-codex-managed-remote-ssh-connections`,{params:e??{}}),"set-remote-connection-auto-connect":async e=>Qe(`set-remote-connection-auto-connect`,{params:e??{}}),"refresh-remote-connection":async(e,{hostId:t})=>{',
         ),
     ],
     error_message="Local desktop webview patch failed: remote connection request handlers snippet not found",
