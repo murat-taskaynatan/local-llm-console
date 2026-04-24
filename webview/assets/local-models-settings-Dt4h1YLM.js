@@ -549,7 +549,7 @@ function RuntimeSettingsContent(props = {}) {
         o = W.model.trim(),
         s = W.reasoning.trim(),
         c = W.catalogPath.trim(),
-        catalogValue = z(a) === `codex` ? `` : c,
+        catalogValue = z(a) === `codex` ? null : c,
         l = ee,
         q = W.remoteUrl.trim(),
         H = W.remoteAuthTokenEnv.trim(),
@@ -608,7 +608,11 @@ function RuntimeSettingsContent(props = {}) {
             { keyPath: `oss_provider`, value: providerValue },
             { keyPath: `model`, value: o },
             { keyPath: `model_reasoning_effort`, value: s },
-            { keyPath: `model_catalog_json`, value: catalogValue },
+            {
+              keyPath: `model_catalog_json`,
+              value: catalogValue,
+              mergeStrategy: `replace`,
+            },
             { keyPath: `local_llm_console_mode`, value: `local` },
             {
               keyPath: `local_llm_console_remote_transport`,
