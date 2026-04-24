@@ -55,7 +55,8 @@ usage() {
     cat <<'HELP'
 Usage: ./install.sh [OPTIONS] [path/to/Codex.dmg]
 
-Builds Local LLM Console into ./codex-app without requiring a preinstalled base app.
+Builds a standalone Local LLM Console into ./codex-app.
+No separate Codex app or Codex CLI install is required after the build completes.
 
 Options:
   -h, --help     Show this help message and exit
@@ -527,36 +528,6 @@ find_codex_cli() {
         return 0
     fi
 
-    if command -v codex >/dev/null 2>&1; then
-        command -v codex
-        return 0
-    fi
-
-    if [ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]; then
-        export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-        # shellcheck disable=SC1090
-        . "$NVM_DIR/nvm.sh" >/dev/null 2>&1 || true
-        if command -v codex >/dev/null 2>&1; then
-            command -v codex
-            return 0
-        fi
-    fi
-
-    local candidate
-    for candidate in \
-        "$HOME/.nvm/versions/node/current/bin/codex" \
-        "$HOME/.nvm/versions/node"/*/bin/codex \
-        "$HOME/.local/share/pnpm/codex" \
-        "$HOME/.local/bin/codex" \
-        "/usr/local/bin/codex" \
-        "/usr/bin/codex"
-    do
-        if [ -x "$candidate" ]; then
-            echo "$candidate"
-            return 0
-        fi
-    done
-
     return 1
 }
 
@@ -662,7 +633,7 @@ fi
 export CHROME_DESKTOP="${CHROME_DESKTOP:-${CODEX_DESKTOP_DESKTOP_ENTRY:-codex-desktop.desktop}}"
 
 if [ -z "$CODEX_CLI_PATH" ]; then
-    notify_error "Codex CLI not found. Install with: npm i -g @openai/codex or npm i -g --prefix ~/.local @openai/codex"
+    notify_error "Bundled Local LLM Console runtime not found. Re-run ./install.sh to rebuild the app bundle."
     exit 1
 fi
 

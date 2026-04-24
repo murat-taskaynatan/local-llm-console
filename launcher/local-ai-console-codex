@@ -49,7 +49,7 @@ resolve_target_triple() {
 
 VENDOR_ROOT="$(resolve_vendor_root || true)"
 if [[ -z "$VENDOR_ROOT" ]]; then
-    echo "Bundled Codex runtime not found. Rebuild Local LLM Console so it can stage its own Codex runtime." >&2
+    echo "Bundled Local LLM Console runtime not found. Re-run ./install.sh so it can stage its own runtime." >&2
     exit 1
 fi
 

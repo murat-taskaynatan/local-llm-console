@@ -60,7 +60,7 @@ Build the Linux app:
 ./install.sh
 ```
 
-The generated Linux app includes its own bundled Codex runtime. A separate host `codex` install is not required.
+The generated Linux app includes its own bundled runtime. You do not need to install the Codex app or Codex CLI separately.
 
 Launch it:
 
@@ -85,7 +85,7 @@ That creates:
 - `dist/macos/Local LLM Console.app`
 - `dist/macos/Local-LLM-Console-macos-unsigned.zip`
 
-The macOS distro also bundles the Codex runtime inside the app. It does not require a separate host `codex` install.
+The macOS distro also bundles the runtime inside the app. It does not require a separate Codex app or Codex CLI install.
 
 ## Distro Output
 
@@ -155,5 +155,5 @@ Chat picker remote-host action:
 ## Notes
 
 - This repo intentionally contains the Local LLM Console layer plus the builder needed to generate its own local app runtime.
-- It builds its own `codex-app/` locally instead of requiring a preinstalled base app.
+- It builds its own `codex-app/` locally instead of depending on a separately installed Codex app.
 - The regular cloud Codex Desktop app is out of scope here.
