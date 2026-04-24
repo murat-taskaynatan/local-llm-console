@@ -180,12 +180,19 @@ async function switchLocalLlmConsoleSessionMode(e, t) {
 }
 
 async function applyLocalLlmConsoleHostService(e = `reload`) {
-  let t = await fetch(`/__local-llm-console/host-service`, {
+  let t;
+  try {
+    t = await fetch(`/__local-llm-console/host-service`, {
       method: `POST`,
       headers: { "Content-Type": `application/json` },
       body: JSON.stringify({ action: e }),
-    }),
-    n = null;
+    });
+  } catch (t) {
+    if (typeof window !== `undefined` && window.location.protocol === `file:`)
+      return { ok: !0, skipped: !0, action: e };
+    throw t;
+  }
+  let n = null;
   try {
     n = await t.json();
   } catch {}
@@ -360,11 +367,13 @@ function buildRemoteSessionRecord(e) {
 
 async function loadManagedRemoteSessionConnections() {
   let e = await sendLocalLlmConsoleRequest(`refresh-remote-connections`);
-  return (e?.remoteConnections ?? []).filter((e) => e?.source === $);
+  let t = e?.remoteConnections;
+  return (Array.isArray(t) ? t : []).filter((e) => e?.source === $);
 }
 
 function mergeManagedRemoteSessionConnections(e, t) {
-  return [...e.filter((e) => e.hostId !== t.hostId && e.connectionType !== ee), t];
+  let n = Array.isArray(e) ? e : [];
+  return [...n.filter((e) => e.hostId !== t.hostId && e.connectionType !== ee), t];
 }
 
 function getCurrentSessionPath() {

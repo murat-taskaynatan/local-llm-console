@@ -508,6 +508,79 @@ replace_optional(
     '"read-config":n9((e,t)=>e.readConfig(t)),"read-config-for-host":i9((e,{hostId:t,...n})=>e.sendRequest(`config/read`,n)),"refresh-remote-connections":async()=>Qe(`refresh-remote-connections`,{params:{}}),"refresh-remote-control-connections":async()=>Qe(`refresh-remote-control-connections`,{params:{}}),"save-codex-managed-remote-ssh-connections":async e=>Qe(`save-codex-managed-remote-ssh-connections`,{params:e??{}}),"set-remote-connection-auto-connect":async e=>Qe(`set-remote-connection-auto-connect`,{params:e??{}}),"refresh-remote-connection":async(e,{hostId:t})=>{',
 )
 
+runtime_local_models_bundle = next((root / "webview" / "assets").glob("local-models-settings-*.js"), None)
+if runtime_local_models_bundle is None:
+    raise SystemExit("Local desktop runtime patch failed: runtime local-models settings bundle not found")
+
+replace_optional(
+    runtime_local_models_bundle,
+    """async function loadManagedRemoteSessionConnections() {
+  let e = await sendLocalLlmConsoleRequest(`refresh-remote-connections`);
+  return (e?.remoteConnections ?? []).filter((e) => e?.source === $);
+}
+
+function mergeManagedRemoteSessionConnections(e, t) {
+  return [...e.filter((e) => e.hostId !== t.hostId && e.connectionType !== ee), t];
+}""",
+    """async function loadManagedRemoteSessionConnections() {
+  let e = await sendLocalLlmConsoleRequest(`refresh-remote-connections`);
+  let t = e?.remoteConnections;
+  return (Array.isArray(t) ? t : []).filter((e) => e?.source === $);
+}
+
+function mergeManagedRemoteSessionConnections(e, t) {
+  let n = Array.isArray(e) ? e : [];
+  return [...n.filter((e) => e.hostId !== t.hostId && e.connectionType !== ee), t];
+}""",
+)
+
+replace_optional(
+    runtime_local_models_bundle,
+    """async function applyLocalLlmConsoleHostService(e = `reload`) {
+  let t = await fetch(`/__local-llm-console/host-service`, {
+      method: `POST`,
+      headers: { "Content-Type": `application/json` },
+      body: JSON.stringify({ action: e }),
+    }),
+    n = null;
+  try {
+    n = await t.json();
+  } catch {}
+  if (!t.ok)
+    throw new Error(
+      typeof (n == null ? void 0 : n.error) == `string` && n.error.trim().length > 0
+        ? n.error
+        : `Unable to apply host settings immediately.`,
+    );
+  return n;
+}""",
+    """async function applyLocalLlmConsoleHostService(e = `reload`) {
+  let t;
+  try {
+    t = await fetch(`/__local-llm-console/host-service`, {
+      method: `POST`,
+      headers: { "Content-Type": `application/json` },
+      body: JSON.stringify({ action: e }),
+    });
+  } catch (t) {
+    if (typeof window !== `undefined` && window.location.protocol === `file:`)
+      return { ok: !0, skipped: !0, action: e };
+    throw t;
+  }
+  let n = null;
+  try {
+    n = await t.json();
+  } catch {}
+  if (!t.ok)
+    throw new Error(
+      typeof (n == null ? void 0 : n.error) == `string` && n.error.trim().length > 0
+        ? n.error
+        : `Unable to apply host settings immediately.`,
+    );
+  return n;
+}""",
+)
+
 replace_once(
     runtime_index_bundle,
     "(0,$.jsx)(oK,{}),R?.type===`cloud`?null:(0,$.jsx)(lK,{conversationId:K,hostId:te},K??`new-conversation`),(0,$.jsx)(_K,{conversationId:K})",
@@ -1243,6 +1316,82 @@ patch_text_file(
         ),
     ],
     error_message="Local desktop webview patch failed: remote connection request handlers snippet not found",
+)
+
+local_models_bundle = next((target / "assets").glob("local-models-settings-*.js"), None)
+if local_models_bundle is None:
+    raise SystemExit("Local desktop webview patch failed: local-models settings bundle not found")
+
+patch_text_file(
+    local_models_bundle,
+    [
+        (
+            """async function loadManagedRemoteSessionConnections() {
+  let e = await sendLocalLlmConsoleRequest(`refresh-remote-connections`);
+  return (e?.remoteConnections ?? []).filter((e) => e?.source === $);
+}
+
+function mergeManagedRemoteSessionConnections(e, t) {
+  return [...e.filter((e) => e.hostId !== t.hostId && e.connectionType !== ee), t];
+}""",
+            """async function loadManagedRemoteSessionConnections() {
+  let e = await sendLocalLlmConsoleRequest(`refresh-remote-connections`);
+  let t = e?.remoteConnections;
+  return (Array.isArray(t) ? t : []).filter((e) => e?.source === $);
+}
+
+function mergeManagedRemoteSessionConnections(e, t) {
+  let n = Array.isArray(e) ? e : [];
+  return [...n.filter((e) => e.hostId !== t.hostId && e.connectionType !== ee), t];
+}""",
+        ),
+        (
+            """async function applyLocalLlmConsoleHostService(e = `reload`) {
+  let t = await fetch(`/__local-llm-console/host-service`, {
+      method: `POST`,
+      headers: { "Content-Type": `application/json` },
+      body: JSON.stringify({ action: e }),
+    }),
+    n = null;
+  try {
+    n = await t.json();
+  } catch {}
+  if (!t.ok)
+    throw new Error(
+      typeof (n == null ? void 0 : n.error) == `string` && n.error.trim().length > 0
+        ? n.error
+        : `Unable to apply host settings immediately.`,
+    );
+  return n;
+}""",
+            """async function applyLocalLlmConsoleHostService(e = `reload`) {
+  let t;
+  try {
+    t = await fetch(`/__local-llm-console/host-service`, {
+      method: `POST`,
+      headers: { "Content-Type": `application/json` },
+      body: JSON.stringify({ action: e }),
+    });
+  } catch (t) {
+    if (typeof window !== `undefined` && window.location.protocol === `file:`)
+      return { ok: !0, skipped: !0, action: e };
+    throw t;
+  }
+  let n = null;
+  try {
+    n = await t.json();
+  } catch {}
+  if (!t.ok)
+    throw new Error(
+      typeof (n == null ? void 0 : n.error) == `string` && n.error.trim().length > 0
+        ? n.error
+        : `Unable to apply host settings immediately.`,
+    );
+  return n;
+}""",
+        ),
+    ],
+    error_message="Local desktop webview patch failed: host service helper snippet not found",
 )
 
 vscode_bundle = next((target / "assets").glob("vscode-api-*.js"), None)
