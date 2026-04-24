@@ -185,6 +185,11 @@ async function switchLocalLlmConsoleSessionMode(e, t) {
 }
 
 async function applyLocalLlmConsoleHostService(e = `reload`) {
+  if (
+    typeof window !== `undefined` &&
+    (window.location.protocol === `file:` || window.location.protocol === `app:`)
+  )
+    return { ok: !0, skipped: !0, action: e };
   let t;
   try {
     t = await fetch(`/__local-llm-console/host-service`, {
