@@ -237,6 +237,11 @@ replace_optional(
 )
 replace_optional(
     bootstrap_bundle,
+    "n.app.setName(e.L(x)),n.app.setPath(`userData`,_({appDataPath:n.app.getPath(`appData`),buildFlavor:x,env:process.env}))",
+    "n.app.setName(`Local LLM Console`),n.app.setPath(`userData`,r.join(n.app.getPath(`appData`),`Local LLM Console`))",
+)
+replace_optional(
+    bootstrap_bundle,
     "message:`${t.app.getName()} failed to start.`",
     "message:`Local LLM Console failed to start.`",
 )
