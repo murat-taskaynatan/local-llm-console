@@ -2,6 +2,7 @@ import { s as e } from "./chunk-Bj-mKKzh.js";
 import { t as n } from "./react-BE0_fAZJ.js";
 import { t as r } from "./jsx-runtime-ebkFq_df.js";
 import { t as i } from "./clsx-DQfH8mAl.js";
+import { r as hostBus } from "./logger-BJWlfVIC.js";
 import { t as s } from "./settings-content-layout-DQIQ2vPn.js";
 import { n as c } from "./settings-row-BG-yYlW7.js";
 import { n as l } from "./chevron-Oo-xHR0X.js";
@@ -205,6 +206,38 @@ async function sendLocalLlmConsoleRequest(e, t) {
   return X(e, t === void 0 ? void 0 : { params: t });
 }
 
+async function restartLocalLlmConsoleAppServer(e = {}) {
+  let t = isRemoteSessionHostId(v(e.hostId, ``)) ? v(e.hostId, ``) : `local`,
+    n = Date.now() + (typeof e.timeoutMs == `number` && e.timeoutMs > 0 ? e.timeoutMs : 15000),
+    r = null;
+  hostBus.dispatchMessage(`codex-app-server-restart`, { hostId: t });
+  await new Promise((e) => window.setTimeout(e, 400));
+  for (; Date.now() < n; ) {
+    try {
+      let n = await sendLocalLlmConsoleRequest(`read-config`, {
+          hostId: t,
+          includeLayers: !1,
+          cwd: null,
+        }),
+        r = C(n?.config ?? {});
+      if (
+        (e.provider == null || r.provider === z(e.provider)) &&
+        (e.model == null || r.model === K(e.provider ?? r.provider, e.model)) &&
+        (e.reasoning == null || r.reasoning === e.reasoning)
+      )
+        return r;
+    } catch (e) {
+      r = e;
+    }
+    await new Promise((e) => window.setTimeout(e, 500));
+  }
+  throw new Error(
+    r instanceof Error && r.message.trim().length > 0
+      ? `Timed out restarting the local session: ${r.message}`
+      : `Timed out restarting the local session.`,
+  );
+}
+
 function normalizeRemoteSessionUrl(e) {
   let t = v(e, ``);
   if (t.length === 0) return ``;
@@ -246,6 +279,50 @@ function getCurrentSessionHostId() {
   } catch {
     return ``;
   }
+}
+
+function getCurrentConfigHostId() {
+  let e = getCurrentSessionHostId();
+  return isRemoteSessionHostId(e) ? e : `local`;
+}
+
+function extractLocalLlmConsoleConfigFilePath(e) {
+  if (typeof e != `object` || !e) return null;
+  if (typeof e.file == `string` && e.file.trim().length > 0) return e.file.trim();
+  if (
+    e.type === `project` &&
+    typeof e.dotCodexFolder == `string` &&
+    e.dotCodexFolder.trim().length > 0
+  )
+    return `${e.dotCodexFolder.trim().replace(/\/+$/, ``)}/config.toml`;
+  return null;
+}
+
+function getLocalLlmConsoleConfigWriteTarget(e) {
+  let t = Array.isArray(e?.layers) ? e.layers : [],
+    n = t.find((e) => e?.name?.type === `user`) ?? t[0] ?? null;
+  return n == null
+    ? { filePath: null, expectedVersion: null }
+    : {
+        filePath: extractLocalLlmConsoleConfigFilePath(n.name) ?? null,
+        expectedVersion: n.version ?? null,
+      };
+}
+
+function isLocalLlmConsoleConfigVersionConflict(e) {
+  let t =
+    e instanceof Error
+      ? e.message
+      : typeof e == `string`
+        ? e
+        : typeof e == `object` && e
+          ? JSON.stringify(e)
+          : ``;
+  return (
+    typeof t == `string` &&
+    (t.includes(`configVersionConflict`) ||
+      t.includes(`Configuration was modified since last read`))
+  );
 }
 
 function isRemoteSessionHostId(e) {
@@ -549,12 +626,12 @@ function RuntimeSettingsContent(props = {}) {
         o = W.model.trim(),
         s = W.reasoning.trim(),
         c = W.catalogPath.trim(),
-        catalogValue = z(a) === `codex` ? null : c,
-        l = ee,
+        includeCatalogPathEdit = z(a) !== `codex`,
+        l = `tailscale`,
         q = W.remoteUrl.trim(),
         H = W.remoteAuthTokenEnv.trim(),
         R = W.hostMode === `on`,
-        G = ee,
+        G = `tailscale`,
         Y = W.hostListenUrl.trim(),
         V = W.hostHttpsPort.trim(),
         I = Number.parseInt(V, 10);
@@ -599,48 +676,59 @@ function RuntimeSettingsContent(props = {}) {
         text: n.savingText ?? `Saving runtime configuration...`,
       });
       try {
-        await i.mutateAsync({
-          filePath: se || null,
-          expectedVersion: ce,
-          edits: [
-            { keyPath: `local_llm_console_provider`, value: a },
-            { keyPath: `model_provider`, value: providerValue },
-            { keyPath: `oss_provider`, value: providerValue },
-            { keyPath: `model`, value: o },
-            { keyPath: `model_reasoning_effort`, value: s },
-            {
-              keyPath: `model_catalog_json`,
-              value: catalogValue,
-              mergeStrategy: `replace`,
-            },
-            { keyPath: `local_llm_console_mode`, value: `local` },
-            {
-              keyPath: `local_llm_console_remote_transport`,
-              value: l,
-            },
-            { keyPath: `local_llm_console_remote_url`, value: q },
-            {
-              keyPath: `local_llm_console_remote_auth_token_env`,
-              value: H,
-            },
-            {
-              keyPath: `local_llm_console_host_enabled`,
-              value: R,
-            },
-            {
-              keyPath: `local_llm_console_host_transport`,
-              value: G,
-            },
-            {
-              keyPath: `local_llm_console_host_listen_url`,
-              value: Y,
-            },
-            {
-              keyPath: `local_llm_console_host_https_port`,
-              value: I,
-            },
-          ],
-        });
+        let edits = [
+          { keyPath: `local_llm_console_provider`, value: a },
+          { keyPath: `model_provider`, value: providerValue },
+          { keyPath: `oss_provider`, value: providerValue },
+          { keyPath: `model`, value: o },
+          { keyPath: `model_reasoning_effort`, value: s },
+          { keyPath: `local_llm_console_mode`, value: `local` },
+          {
+            keyPath: `local_llm_console_remote_transport`,
+            value: l,
+          },
+          { keyPath: `local_llm_console_remote_url`, value: q },
+          {
+            keyPath: `local_llm_console_remote_auth_token_env`,
+            value: H,
+          },
+          {
+            keyPath: `local_llm_console_host_enabled`,
+            value: R,
+          },
+          {
+            keyPath: `local_llm_console_host_transport`,
+            value: G,
+          },
+          {
+            keyPath: `local_llm_console_host_listen_url`,
+            value: Y,
+          },
+          {
+            keyPath: `local_llm_console_host_https_port`,
+            value: I,
+          },
+        ];
+        includeCatalogPathEdit &&
+          edits.splice(5, 0, { keyPath: `model_catalog_json`, value: c });
+        try {
+          await i.mutateAsync({
+            filePath: se || null,
+            expectedVersion: ce,
+            edits,
+          });
+        } catch (e) {
+          if (!isLocalLlmConsoleConfigVersionConflict(e)) throw e;
+          let t = await r(),
+            n = t?.data?.configWriteTarget ?? null,
+            a = n?.filePath ?? se ?? null,
+            o = n?.expectedVersion ?? null;
+          await i.mutateAsync({
+            filePath: a,
+            expectedVersion: o,
+            edits,
+          });
+        }
         E((t) => ({ ...W, launchMode: `local` }));
         ie({
           currentMode: isRemoteScope ? _e : b(e),
@@ -650,14 +738,23 @@ function RuntimeSettingsContent(props = {}) {
         if (!isRemoteScope) {
           U({
             tone: `success`,
-            text: `Saved runtime configuration. Restarting Local LLM Console...`,
+            text: `Saved runtime configuration. Restarting session...`,
           });
-          if (
-            typeof window !== `undefined` &&
-            typeof window.__switchLocalLLMConsoleMode === `function`
-          ) {
-            await window.__switchLocalLLMConsoleMode(`local`);
-          }
+          await restartLocalLlmConsoleAppServer({
+            hostId: getCurrentSessionHostId(),
+            provider: a,
+            model: o,
+            reasoning: s,
+          });
+          let e = await r(),
+            t = e?.data?.config ?? {},
+            n = C(t),
+            i = e?.data?.configWriteTarget?.filePath ?? se;
+          E({ ...n, catalogPath: deriveLocalCatalogPath(i, n.catalogPath) });
+          U({
+            tone: `success`,
+            text: `Saved runtime configuration.`,
+          });
           return !0;
         }
         await r();
@@ -1171,6 +1268,10 @@ function RuntimeSettingsContent(props = {}) {
   }, [D]);
 
   (0, p.useEffect)(() => {
+    r().catch(() => {});
+  }, []);
+
+  (0, p.useEffect)(() => {
     let e = !1,
       t = (t) => {
         if (e || !(t && typeof t == `object`)) return;
@@ -1207,7 +1308,7 @@ function RuntimeSettingsContent(props = {}) {
 
   (0, p.useEffect)(() => {
     E(ye);
-    U(null);
+    U((e) => (e != null && e.tone === `success` ? e : null));
     oe(null);
   }, [L(ye)]);
 
