@@ -104,6 +104,8 @@ function L(e) {
 function T(e, t) {
   let n = t === `codex` ? Q : P,
     r = n.map((e) => ({ value: e, label: e }));
+  if (t !== `codex` && r.length === 0 && (e == null || e.length === 0))
+    return [{ value: ``, label: `No local models found` }];
   return e != null && e.length > 0 && !n.includes(e)
     ? [{ value: e, label: `${e} (current)` }, ...r]
     : r;
@@ -555,42 +557,31 @@ function RuntimeSettingsContent(props = {}) {
         text: n.savingText ?? `Saving runtime configuration...`,
       });
       try {
-        await i.mutateAsync({
-          filePath: se || re,
-          expectedVersion: se ? ce : null,
-          edits: [
+        let edits = [
+          { keyPath: `local_llm_console_mode`, value: z ? e : `local` },
+          { keyPath: `local_llm_console_remote_transport`, value: l },
+          { keyPath: `local_llm_console_remote_url`, value: q },
+          {
+            keyPath: `local_llm_console_remote_auth_token_env`,
+            value: H,
+          },
+          { keyPath: `local_llm_console_host_enabled`, value: R },
+          { keyPath: `local_llm_console_host_transport`, value: G },
+          { keyPath: `local_llm_console_host_listen_url`, value: Y },
+          { keyPath: `local_llm_console_host_https_port`, value: I },
+        ];
+        z ||
+          edits.unshift(
             { keyPath: `model_provider`, value: B },
             { keyPath: `oss_provider`, value: a === `codex` ? `ollama` : a },
             { keyPath: `model`, value: o },
             { keyPath: `model_reasoning_effort`, value: s },
             { keyPath: `model_catalog_json`, value: D },
-            { keyPath: `local_llm_console_mode`, value: `local` },
-            {
-              keyPath: `local_llm_console_remote_transport`,
-              value: l,
-            },
-            { keyPath: `local_llm_console_remote_url`, value: q },
-            {
-              keyPath: `local_llm_console_remote_auth_token_env`,
-              value: H,
-            },
-            {
-              keyPath: `local_llm_console_host_enabled`,
-              value: R,
-            },
-            {
-              keyPath: `local_llm_console_host_transport`,
-              value: G,
-            },
-            {
-              keyPath: `local_llm_console_host_listen_url`,
-              value: Y,
-            },
-            {
-              keyPath: `local_llm_console_host_https_port`,
-              value: I,
-            },
-          ],
+          );
+        await i.mutateAsync({
+          filePath: se || re,
+          expectedVersion: se ? ce : null,
+          edits,
         });
         await r();
         E((t) => ({ ...t, launchMode: `local` }));
