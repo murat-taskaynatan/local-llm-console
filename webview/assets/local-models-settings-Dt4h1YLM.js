@@ -109,6 +109,11 @@ function S(e, t = `443`) {
   return t;
 }
 
+function stripWebsocketUrlScheme(e, t = ``) {
+  let n = v(e, t);
+  return n.replace(/^wss?:\/\//i, ``);
+}
+
 function C(e) {
   let t = z(
     v(
@@ -124,13 +129,13 @@ function C(e) {
     reasoning: v(e?.model_reasoning_effort, `medium`),
     catalogPath: v(e?.model_catalog_json, ``),
     remoteTransport: N(e?.local_llm_console_remote_transport),
-    remoteUrl: v(e?.local_llm_console_remote_url, ``),
+    remoteUrl: stripWebsocketUrlScheme(e?.local_llm_console_remote_url, ``),
     remoteAuthTokenEnv: v(e?.local_llm_console_remote_auth_token_env, ``),
     hostMode: x(e?.local_llm_console_host_enabled),
     hostTransport: N(e?.local_llm_console_host_transport),
-    hostListenUrl: v(
+    hostListenUrl: stripWebsocketUrlScheme(
       e?.local_llm_console_host_listen_url,
-      `ws://127.0.0.1:8765`,
+      `127.0.0.1:8765`,
     ),
     hostHttpsPort: S(e?.local_llm_console_host_https_port),
   };
@@ -248,6 +253,7 @@ async function restartLocalLlmConsoleAppServer(e = {}) {
 function normalizeRemoteSessionUrl(e) {
   let t = v(e, ``);
   if (t.length === 0) return ``;
+  /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(t) || (t = `wss://${t}`);
   let n;
   try {
     n = new URL(t);
@@ -255,7 +261,22 @@ function normalizeRemoteSessionUrl(e) {
     throw new Error(`Tailscale server URL is invalid.`);
   }
   if (n.protocol !== `ws:` && n.protocol !== `wss:`)
-    throw new Error(`Tailscale server URL must start with ws:// or wss://.`);
+    throw new Error(`Tailscale server URL is invalid.`);
+  return n.toString();
+}
+
+function normalizeHostListenUrl(e) {
+  let t = v(e, ``);
+  if (t.length === 0) return ``;
+  /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(t) || (t = `ws://${t}`);
+  let n;
+  try {
+    n = new URL(t);
+  } catch {
+    throw new Error(`Host listen URL is invalid.`);
+  }
+  if (n.protocol !== `ws:` && n.protocol !== `wss:`)
+    throw new Error(`Host listen URL is invalid.`);
   return n.toString();
 }
 
@@ -641,7 +662,7 @@ function RuntimeSettingsContent(props = {}) {
         H = W.remoteAuthTokenEnv.trim(),
         R = W.hostMode === `on`,
         G = `tailscale`,
-        Y = W.hostListenUrl.trim(),
+        Y = R ? normalizeHostListenUrl(W.hostListenUrl) : v(W.hostListenUrl, ``),
         V = W.hostHttpsPort.trim(),
         I = Number.parseInt(V, 10);
       if (
@@ -975,7 +996,7 @@ function RuntimeSettingsContent(props = {}) {
                                 let t = e.target.value;
                                 E((e) => ({ ...e, remoteUrl: t }));
                               },
-                              placeholder: `wss://your-host.tailnet.ts.net`,
+                              placeholder: `your-host.tailnet.ts.net`,
                             }),
                           }),
                           (0, m.jsx)(l, {
@@ -1080,7 +1101,7 @@ function RuntimeSettingsContent(props = {}) {
                             let t = e.target.value;
                             E((e) => ({ ...e, hostListenUrl: t }));
                           },
-                          placeholder: `ws://127.0.0.1:8765`,
+                          placeholder: `127.0.0.1:8765`,
                         }),
                       }),
                     ],

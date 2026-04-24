@@ -151,13 +151,28 @@ def clean_port(value, default=443):
     return default
 
 
+def normalize_ws_url(value, default):
+    value = clean_string(value, default)
+    if "://" not in value:
+        value = f"ws://{value}"
+    parsed = urlparse(value)
+    if parsed.scheme not in {"ws", "wss"}:
+        return default
+    if not parsed.hostname:
+        return default
+    return parsed.geturl()
+
+
 provider = clean_identifier(
     config.get("local_llm_console_provider") or config.get("model_provider") or config.get("oss_provider"),
     "ollama",
 )
 host_enabled = clean_bool(config.get("local_llm_console_host_enabled"))
 host_transport = clean_string(config.get("local_llm_console_host_transport"), "tailscale")
-host_listen_url = clean_string(config.get("local_llm_console_host_listen_url"), "ws://127.0.0.1:8765")
+host_listen_url = normalize_ws_url(
+    config.get("local_llm_console_host_listen_url"),
+    "ws://127.0.0.1:8765",
+)
 host_https_port = clean_port(config.get("local_llm_console_host_https_port"), 443)
 
 parsed = urlparse(host_listen_url)
