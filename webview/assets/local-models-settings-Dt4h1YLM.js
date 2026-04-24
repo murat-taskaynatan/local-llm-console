@@ -46,7 +46,7 @@ function b(e) {
 }
 
 function N(e) {
-  return e === `tailscale` ? `tailscale` : `tailscale`;
+  return e === ee || e === `tailscale` ? ee : ee;
 }
 
 function x(e) {
@@ -550,11 +550,11 @@ function RuntimeSettingsContent(props = {}) {
         s = W.reasoning.trim(),
         c = W.catalogPath.trim(),
         catalogValue = z(a) === `codex` ? `` : c,
-        l = `tailscale`,
+        l = ee,
         q = W.remoteUrl.trim(),
         H = W.remoteAuthTokenEnv.trim(),
         R = W.hostMode === `on`,
-        G = `tailscale`,
+        G = ee,
         Y = W.hostListenUrl.trim(),
         V = W.hostHttpsPort.trim(),
         I = Number.parseInt(V, 10);

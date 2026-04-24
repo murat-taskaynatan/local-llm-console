@@ -79,7 +79,7 @@
       remoteTransport:
         typeof state.remoteTransport === `string` && state.remoteTransport.trim().length > 0
           ? state.remoteTransport.trim()
-          : `tailscale`,
+          : `tailscale-websocket`,
     };
   }
 

@@ -73,7 +73,7 @@ def build_state(config_path: Path, active_mode: str) -> dict[str, Any]:
         "remoteUrl": remote_url,
         "remoteTransport": clean_string(
             config.get("local_llm_console_remote_transport"),
-            "tailscale",
+            "tailscale-websocket",
         ),
     }
 
