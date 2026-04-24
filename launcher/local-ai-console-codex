@@ -1,0 +1,69 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+resolve_vendor_root() {
+    local candidate=""
+    for candidate in \
+        "${LOCAL_LLM_CONSOLE_CODEX_VENDOR_ROOT:-}" \
+        "$SCRIPT_DIR/../vendor" \
+        "$REPO_ROOT/codex-app/resources/local-llm-console/vendor"
+    do
+        if [[ -n "$candidate" && -d "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+resolve_target_triple() {
+    local os=""
+    local arch=""
+
+    os="$(uname -s)"
+    arch="$(uname -m)"
+
+    case "$os/$arch" in
+        Linux/x86_64)
+            printf '%s\n' 'x86_64-unknown-linux-musl'
+            ;;
+        Linux/aarch64|Linux/arm64)
+            printf '%s\n' 'aarch64-unknown-linux-musl'
+            ;;
+        Darwin/x86_64)
+            printf '%s\n' 'x86_64-apple-darwin'
+            ;;
+        Darwin/arm64)
+            printf '%s\n' 'aarch64-apple-darwin'
+            ;;
+        *)
+            printf 'Unsupported platform: %s/%s\n' "$os" "$arch" >&2
+            exit 1
+            ;;
+    esac
+}
+
+VENDOR_ROOT="$(resolve_vendor_root || true)"
+if [[ -z "$VENDOR_ROOT" ]]; then
+    echo "Bundled Codex runtime not found. Rebuild Local LLM Console so it can stage its own Codex runtime." >&2
+    exit 1
+fi
+
+TARGET_TRIPLE="$(resolve_target_triple)"
+CODEX_BIN="$VENDOR_ROOT/$TARGET_TRIPLE/codex/codex"
+RG_DIR="$VENDOR_ROOT/$TARGET_TRIPLE/path"
+
+if [[ ! -x "$CODEX_BIN" ]]; then
+    echo "Bundled Codex binary missing for $TARGET_TRIPLE at $CODEX_BIN" >&2
+    exit 1
+fi
+
+if [[ -d "$RG_DIR" ]]; then
+    export PATH="$RG_DIR:$PATH"
+fi
+
+exec "$CODEX_BIN" "$@"

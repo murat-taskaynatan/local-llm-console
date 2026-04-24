@@ -13,6 +13,9 @@ ELECTRON_VERSION="40.8.5"
 WORK_DIR="$(mktemp -d)"
 ARCH="$(uname -m)"
 ICON_SOURCE="$SCRIPT_DIR/assets/local-ai-console-gradient.png"
+CODEX_STAGE_SCRIPT="$SCRIPT_DIR/scripts/stage-codex-runtime.sh"
+CODEX_HELPER_SOURCE="$SCRIPT_DIR/launcher/local-ai-console-codex"
+CODEX_CLI_WRAPPER_SOURCE="$SCRIPT_DIR/launcher/codex-local-desktop-cli"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -96,13 +99,50 @@ parse_args() {
 prepare_install() {
     if [ "$FRESH_INSTALL" -eq 1 ] && [ -d "$INSTALL_DIR" ]; then
         info "Removing existing install directory: $INSTALL_DIR"
-        rm -rf "$INSTALL_DIR"
+        mkdir -p "$INSTALL_DIR/.codex-linux"
+
+        local item=""
+        shopt -s dotglob nullglob
+        for item in "$INSTALL_DIR"/* "$INSTALL_DIR"/.*; do
+            case "$(basename "$item")" in
+                .|..|start-local.sh|.codex-linux)
+                    continue
+                    ;;
+            esac
+            rm -rf "$item"
+        done
+        shopt -u dotglob nullglob
+
+        if [ -d "$INSTALL_DIR/.codex-linux" ]; then
+            for item in "$INSTALL_DIR/.codex-linux"/* "$INSTALL_DIR/.codex-linux"/.*; do
+                case "$(basename "$item")" in
+                    .|..|local-ai-console-x11-title-fix.sh)
+                        continue
+                        ;;
+                esac
+                rm -rf "$item"
+            done
+        fi
     fi
 
     if [ "$FRESH_INSTALL" -eq 1 ] && [ "$REUSE_CACHED_DMG" -ne 1 ] && [ -f "$CACHED_DMG_PATH" ]; then
         info "Removing cached DMG: $CACHED_DMG_PATH"
         rm -f "$CACHED_DMG_PATH"
     fi
+}
+
+linux_codex_target() {
+    case "$ARCH" in
+        x86_64)
+            printf '%s\n' 'linux-x64'
+            ;;
+        aarch64|arm64)
+            printf '%s\n' 'linux-arm64'
+            ;;
+        *)
+            error "Unsupported Codex runtime architecture: $ARCH"
+            ;;
+    esac
 }
 
 # ---- Check dependencies ----
@@ -305,10 +345,48 @@ download_electron() {
     info "Electron ready"
 }
 
+bundle_codex_runtime() {
+    local vendor_dir="$INSTALL_DIR/resources/local-llm-console/vendor"
+    local target=""
+
+    [ -x "$CODEX_STAGE_SCRIPT" ] || chmod 755 "$CODEX_STAGE_SCRIPT"
+    [ -x "$CODEX_STAGE_SCRIPT" ] || error "Codex staging script not found: $CODEX_STAGE_SCRIPT"
+
+    target="$(linux_codex_target)"
+    info "Bundling Codex runtime for $target"
+
+    rm -rf "$vendor_dir"
+    mkdir -p "$vendor_dir"
+    "$CODEX_STAGE_SCRIPT" --dest "$vendor_dir" "$target"
+
+    info "Bundled Codex runtime staged"
+}
+
+install_bundled_codex_helpers() {
+    local helper_dir="$INSTALL_DIR/resources/local-llm-console/bin"
+
+    [ -f "$CODEX_HELPER_SOURCE" ] || error "Missing bundled Codex helper source: $CODEX_HELPER_SOURCE"
+    [ -f "$CODEX_CLI_WRAPPER_SOURCE" ] || error "Missing Codex CLI wrapper source: $CODEX_CLI_WRAPPER_SOURCE"
+
+    mkdir -p "$helper_dir"
+    cp "$CODEX_HELPER_SOURCE" "$helper_dir/local-ai-console-codex"
+    cp "$CODEX_CLI_WRAPPER_SOURCE" "$helper_dir/codex-local-desktop-cli"
+    chmod 755 "$helper_dir/local-ai-console-codex" "$helper_dir/codex-local-desktop-cli"
+
+    info "Bundled Codex helpers installed"
+}
+
 # ---- Extract webview files ----
 extract_webview() {
     local app_dir="$1"
     mkdir -p "$INSTALL_DIR/content/webview"
+    rm -rf "$INSTALL_DIR/content/webview/"*
+
+    if [ -d "$SCRIPT_DIR/webview" ] && [ "$(ls -A "$SCRIPT_DIR/webview" 2>/dev/null)" ]; then
+        cp -r "$SCRIPT_DIR/webview/"* "$INSTALL_DIR/content/webview/"
+        info "Patched webview snapshot copied from repo"
+        return 0
+    fi
 
     # Webview files are inside the extracted asar at webview/
     local asar_extracted="$WORK_DIR/app-extracted"
@@ -433,6 +511,12 @@ resolve_notification_icon() {
 }
 
 find_codex_cli() {
+    local bundled_cli="$SCRIPT_DIR/resources/local-llm-console/bin/codex-local-desktop-cli"
+    if [ -x "$bundled_cli" ]; then
+        echo "$bundled_cli"
+        return 0
+    fi
+
     if command -v codex >/dev/null 2>&1; then
         command -v codex
         return 0
@@ -504,7 +588,7 @@ import sys
 import urllib.request
 
 url = sys.argv[1]
-required_markers = ("<title>Codex</title>", "startup-loader")
+required_markers = ("<title>Local LLM Console</title>", "startup-loader")
 
 with urllib.request.urlopen(url, timeout=2) as response:
     body = response.read(8192).decode("utf-8", "ignore")
@@ -627,13 +711,11 @@ main() {
 
     patch_asar "$app_dir"
     download_electron
+    bundle_codex_runtime
+    install_bundled_codex_helpers
     extract_webview "$app_dir"
     install_app
     create_start_script
-
-    if ! command -v codex &>/dev/null; then
-        warn "Codex CLI not found. Install it with: npm i -g @openai/codex or npm i -g --prefix ~/.local @openai/codex"
-    fi
 
     echo ""                                             >&2
     echo "============================================" >&2

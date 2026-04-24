@@ -1,6 +1,6 @@
 # Local LLM Console
 
-Local LLM Console is a standalone Linux desktop app for local LLMs with a Codex Desktop like UI, Tailscale-based remote host support, and a self-bootstrapping install flow.
+Local LLM Console is a standalone desktop app for local LLMs with a Codex Desktop like UI, Tailscale-based remote host support, and self-contained Linux and macOS distro builders.
 
 This repository includes the Local LLM Console launchers, patched webview, desktop integration files, icon assets, an X11 title fix, a local model catalog, and the scripts needed to generate `codex-app/` locally from upstream assets.
 
@@ -37,7 +37,9 @@ This repository includes the Local LLM Console launchers, patched webview, deskt
 - `config/local-model-catalog.json`
   Local model catalog used by the app
 - `install.sh`
-  Standalone installer that builds `codex-app/` locally
+  Standalone Linux installer that builds `codex-app/` locally and bundles the Codex runtime
+- `scripts/build-macos-dist.sh`
+  macOS distro builder that creates an unsigned `Local LLM Console.app` zip with the Codex runtime bundled inside
 - `scripts/`
   Builder support scripts used by the installer
 - `webview/`
@@ -57,6 +59,8 @@ Build the app:
 ./install.sh
 ```
 
+The generated Linux app includes its own bundled Codex runtime. A separate host `codex` install is not required.
+
 Launch it:
 
 ```bash
@@ -68,6 +72,17 @@ If you already have a local `Codex.dmg`, you can point the installer at it:
 ```bash
 ./install.sh /path/to/Codex.dmg
 ```
+
+Build the macOS distro:
+
+```bash
+./scripts/build-macos-dist.sh
+```
+
+That creates:
+
+- `dist/macos/Local LLM Console.app`
+- `dist/macos/Local-LLM-Console-macos-unsigned.zip`
 
 ## Optional Local Setup
 

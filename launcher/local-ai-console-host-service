@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ACTION="${1:-reload}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex-local-desktop}"
 CONFIG_PATH="${CODEX_HOME}/config.toml"
 XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
@@ -11,6 +13,7 @@ CACHE_DIR="${XDG_CACHE_HOME}/local-ai-console"
 PID_FILE="${STATE_DIR}/app-server.pid"
 SERVE_PORT_FILE="${STATE_DIR}/tailscale-https-port"
 LOG_FILE="${CACHE_DIR}/host-service.log"
+CODEX_HELPER="${LOCAL_LLM_CONSOLE_CODEX_HELPER:-$REPO_ROOT/launcher/local-ai-console-codex}"
 
 mkdir -p "$STATE_DIR" "$CACHE_DIR"
 
@@ -164,8 +167,13 @@ start_app_server() {
     return 0
   fi
 
+  if [[ ! -x "$CODEX_HELPER" ]]; then
+    log "bundled codex helper missing at $CODEX_HELPER"
+    return 1
+  fi
+
   log "starting codex app-server listen=${HOST_LISTEN_URL} provider=${LOCAL_PROVIDER}"
-  nohup /usr/local/bin/codex \
+  nohup "$CODEX_HELPER" \
     app-server \
     --disable plugins \
     --listen "$HOST_LISTEN_URL" \
