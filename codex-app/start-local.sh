@@ -563,7 +563,10 @@ replace_optional(
       body: JSON.stringify({ action: e }),
     });
   } catch (t) {
-    if (typeof window !== `undefined` && window.location.protocol === `file:`)
+    if (
+      typeof window !== `undefined` &&
+      (window.location.protocol === `file:` || window.location.protocol === `app:`)
+    )
       return { ok: !0, skipped: !0, action: e };
     throw t;
   }
@@ -1373,7 +1376,10 @@ function mergeManagedRemoteSessionConnections(e, t) {
       body: JSON.stringify({ action: e }),
     });
   } catch (t) {
-    if (typeof window !== `undefined` && window.location.protocol === `file:`)
+    if (
+      typeof window !== `undefined` &&
+      (window.location.protocol === `file:` || window.location.protocol === `app:`)
+    )
       return { ok: !0, skipped: !0, action: e };
     throw t;
   }

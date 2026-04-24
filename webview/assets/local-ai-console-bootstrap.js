@@ -106,6 +106,9 @@
   }
 
   async function refreshSessionState() {
+    if (window.location.protocol === `file:` || window.location.protocol === `app:`) {
+      return getSessionState();
+    }
     const response = await fetch(SESSION_STATE_PATH, {
       cache: `no-store`,
       headers: {
@@ -120,6 +123,12 @@
   }
 
   async function switchSessionMode(mode) {
+    if (window.location.protocol === `file:` || window.location.protocol === `app:`) {
+      return setSessionState({
+        ...getSessionState(),
+        currentMode: currentWindowHasRemoteHost() ? `remote` : normalizeMode(mode),
+      });
+    }
     const response = await fetch(SESSION_MODE_PATH, {
       method: `POST`,
       headers: {
