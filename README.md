@@ -11,6 +11,7 @@ This repository includes the Local LLM Console launchers, patched webview, deskt
 - A local-model catalog and desktop launcher/icon bundle
 - A remote-host workflow for connecting one Local LLM Console session to another over Tailscale
 - A self-bootstrapping installer that generates the Linux app locally
+- A macOS distro builder that outputs a standalone `.app` bundle and zip
 
 ## What This Repo Is Not
 
@@ -53,7 +54,7 @@ Install dependencies if needed:
 bash scripts/install-deps.sh
 ```
 
-Build the app:
+Build the Linux app:
 
 ```bash
 ./install.sh
@@ -83,6 +84,20 @@ That creates:
 
 - `dist/macos/Local LLM Console.app`
 - `dist/macos/Local-LLM-Console-macos-unsigned.zip`
+
+The macOS distro also bundles the Codex runtime inside the app. It does not require a separate host `codex` install.
+
+## Distro Output
+
+- Linux:
+  Run `./install.sh`, then launch with `./launcher/local-ai-console-launch`
+- macOS:
+  Run `./scripts/build-macos-dist.sh`, then use `dist/macos/Local LLM Console.app` or `dist/macos/Local-LLM-Console-macos-unsigned.zip`
+
+## macOS Notes
+
+- The macOS build is currently unsigned.
+- On first launch, macOS may require `Right click -> Open` or quarantine removal before the app will run.
 
 ## Optional Local Setup
 
