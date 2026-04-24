@@ -12,6 +12,7 @@ APP_BUNDLE_NAME="${APP_NAME}.app"
 APP_BUNDLE_PATH="$DIST_DIR/$APP_BUNDLE_NAME"
 ZIP_PATH="$DIST_DIR/$ZIP_NAME"
 ICON_SOURCE="$REPO_ROOT/assets/local-ai-console-gradient.png"
+MODEL_CATALOG_SOURCE="$REPO_ROOT/config/local-model-catalog.json"
 WEBVIEW_SOURCE="$REPO_ROOT/webview"
 CODEX_STAGE_SCRIPT="$REPO_ROOT/scripts/stage-codex-runtime.sh"
 CODEX_HELPER_SOURCE="$REPO_ROOT/launcher/local-ai-console-codex"
@@ -40,7 +41,7 @@ trap 'error "Failed at line $LINENO (exit code $?)"' ERR
 check_deps() {
     local missing=()
     local cmd=""
-    for cmd in python3 node npx zip; do
+    for cmd in python3 node npx zip sips iconutil; do
         command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
     done
 
@@ -109,6 +110,43 @@ install_bundled_helpers() {
     cp "$CODEX_HELPER_SOURCE" "$helper_dir/local-ai-console-codex"
     cp "$CODEX_CLI_WRAPPER_SOURCE" "$helper_dir/codex-local-desktop-cli"
     chmod 755 "$helper_dir/local-ai-console-codex" "$helper_dir/codex-local-desktop-cli"
+}
+
+install_model_catalog() {
+    local app_bundle_path="$1"
+    local config_dir="$app_bundle_path/Contents/Resources/local-llm-console/config"
+
+    [ -f "$MODEL_CATALOG_SOURCE" ] || error "Missing model catalog: $MODEL_CATALOG_SOURCE"
+
+    mkdir -p "$config_dir"
+    cp "$MODEL_CATALOG_SOURCE" "$config_dir/local-model-catalog.json"
+}
+
+install_app_icon() {
+    local app_bundle_path="$1"
+    local iconset_dir="$WORK_DIR/local-llm-console.iconset"
+    local icon_path="$WORK_DIR/local-llm-console.icns"
+
+    rm -rf "$iconset_dir" "$icon_path"
+    mkdir -p "$iconset_dir"
+
+    while read -r size filename; do
+        sips -z "$size" "$size" "$ICON_SOURCE" --out "$iconset_dir/$filename" >/dev/null
+    done <<'EOF'
+16 icon_16x16.png
+32 icon_16x16@2x.png
+32 icon_32x32.png
+64 icon_32x32@2x.png
+128 icon_128x128.png
+256 icon_128x128@2x.png
+256 icon_256x256.png
+512 icon_256x256@2x.png
+512 icon_512x512.png
+1024 icon_512x512@2x.png
+EOF
+
+    iconutil -c icns "$iconset_dir" -o "$icon_path"
+    cp "$icon_path" "$app_bundle_path/Contents/Resources/local-llm-console.icns"
 }
 
 write_app_launcher() {
@@ -291,10 +329,19 @@ asar_path = app_bundle / "Contents" / "Resources" / "app.asar"
 with plist_path.open("rb") as handle:
     plist = plistlib.load(handle)
 
-asar_hash = hashlib.sha256(asar_path.read_bytes()).hexdigest()
+asar_bytes = asar_path.read_bytes()
+header_size = int.from_bytes(asar_bytes[12:16], byteorder="little")
+asar_header = asar_bytes[16:16 + header_size]
+asar_hash = hashlib.sha256(asar_header).hexdigest()
 plist["CFBundleDisplayName"] = "Local LLM Console"
-plist["CFBundleName"] = "Local LLM Console"
+# Electron derives the macOS helper bundle names from CFBundleName. The
+# upstream helper apps are still named "Codex Helper*.app", so keep the
+# internal bundle name aligned with those helpers while using DisplayName for
+# the visible app name.
+plist["CFBundleName"] = "Codex"
 plist["CFBundleIdentifier"] = "com.murat-taskaynatan.local-llm-console"
+plist["CFBundleIconFile"] = "local-llm-console.icns"
+plist["CFBundleIconName"] = "local-llm-console"
 plist["CFBundleGetInfoString"] = "Local LLM Console"
 plist["LSApplicationCategoryType"] = "public.app-category.developer-tools"
 plist["ElectronAsarIntegrity"] = {
@@ -317,7 +364,9 @@ prepare_bundle() {
     cp -a "$source_app" "$APP_BUNDLE_PATH"
 
     mv "$APP_BUNDLE_PATH/$MACOS_LAUNCHER_PATH" "$APP_BUNDLE_PATH/$MACOS_BINARY_PATH"
+    install_app_icon "$APP_BUNDLE_PATH"
     install_bundled_helpers "$APP_BUNDLE_PATH"
+    install_model_catalog "$APP_BUNDLE_PATH"
     stage_codex_runtime "$APP_BUNDLE_PATH"
     write_app_launcher "$APP_BUNDLE_PATH/$MACOS_LAUNCHER_PATH" "$MACOS_BINARY_PATH" "$CLI_WRAPPER_RELATIVE"
 
@@ -345,6 +394,7 @@ launcher_path = app_bundle / "Contents" / "MacOS" / "Codex"
 cli_wrapper_path = app_bundle / "Contents" / "Resources" / "local-llm-console" / "bin" / "codex-local-desktop-cli"
 codex_helper_path = app_bundle / "Contents" / "Resources" / "local-llm-console" / "bin" / "local-ai-console-codex"
 vendor_dir = app_bundle / "Contents" / "Resources" / "local-llm-console" / "vendor"
+model_catalog_path = app_bundle / "Contents" / "Resources" / "local-llm-console" / "config" / "local-model-catalog.json"
 
 with plist_path.open("rb") as handle:
     plist = plistlib.load(handle)
@@ -355,6 +405,7 @@ assert launcher_path.is_file()
 assert cli_wrapper_path.is_file()
 assert codex_helper_path.is_file()
 assert vendor_dir.is_dir()
+assert model_catalog_path.is_file()
 print("verified")
 PY
 }
@@ -363,6 +414,7 @@ main() {
     [ -f "$DMG_PATH" ] || error "DMG not found: $DMG_PATH"
     [ -d "$WEBVIEW_SOURCE" ] || error "Missing patched webview directory: $WEBVIEW_SOURCE"
     [ -f "$ICON_SOURCE" ] || error "Missing icon: $ICON_SOURCE"
+    [ -f "$MODEL_CATALOG_SOURCE" ] || error "Missing model catalog: $MODEL_CATALOG_SOURCE"
 
     check_deps
 

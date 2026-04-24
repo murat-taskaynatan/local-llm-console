@@ -6,17 +6,27 @@ CODEX_HOME="${CODEX_HOME:-$HOME/.codex-local-desktop}"
 CONFIG_PATH="${CODEX_HOME}/config.toml"
 CODEX_HELPER="${LOCAL_LLM_CONSOLE_CODEX_HELPER:-$SCRIPT_DIR/local-ai-console-codex}"
 
-mapfile -t LOCAL_LLM_CONSOLE_CONFIG < <(
-  python3 - "$CONFIG_PATH" <<'PY'
+read_config_value() {
+  local key="$1"
+  local default_value="$2"
+  python3 - "$CONFIG_PATH" "$key" "$default_value" <<'PY'
 from pathlib import Path
 import sys
-import tomllib
 
 path = Path(sys.argv[1])
+target_key = sys.argv[2]
+default_value = sys.argv[3]
 config = {}
 if path.is_file():
-    with path.open("rb") as handle:
-        config = tomllib.load(handle)
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key in {"model_provider", "oss_provider", "model", "model_reasoning_effort"}:
+            config[key] = value
 
 
 def clean_string(value, default=""):
@@ -31,19 +41,27 @@ def clean_identifier(value, default):
     allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-")
     return value if value and set(value) <= allowed else default
 
-provider = clean_identifier(
-    config.get("model_provider") or config.get("oss_provider"),
-    "ollama",
-)
-print(provider)
+print(clean_identifier(config.get(target_key), default_value))
 PY
-)
+}
 
-LOCAL_PROVIDER="${LOCAL_LLM_CONSOLE_CONFIG[0]:-ollama}"
+LOCAL_PROVIDER="$(read_config_value model_provider "$(read_config_value oss_provider ollama)")"
+LOCAL_PROVIDER="${LOCAL_PROVIDER:-ollama}"
+LOCAL_MODEL="$(read_config_value model gpt-oss:120b)"
+LOCAL_REASONING="$(read_config_value model_reasoning_effort medium)"
 
 if [[ ! -x "$CODEX_HELPER" ]]; then
     echo "Local LLM Console Codex helper not found at $CODEX_HELPER" >&2
     exit 1
+fi
+
+if [[ "$LOCAL_PROVIDER" == "codex" || "$LOCAL_PROVIDER" == "openai" ]]; then
+  export CODEX_HOME="${LOCAL_LLM_CONSOLE_CLOUD_CODEX_HOME:-$HOME/.codex}"
+  exec "$CODEX_HELPER" \
+    -c 'model_provider="openai"' \
+    -c "model=\"$LOCAL_MODEL\"" \
+    -c "model_reasoning_effort=\"$LOCAL_REASONING\"" \
+    "$@"
 fi
 
 exec "$CODEX_HELPER" \

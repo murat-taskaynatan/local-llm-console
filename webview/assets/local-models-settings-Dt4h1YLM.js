@@ -16,6 +16,7 @@ var p = e(n(), 1),
   g = [
     { value: `ollama`, label: `Ollama` },
     { value: `lmstudio`, label: `LM Studio` },
+    { value: `codex`, label: `Codex Cloud` },
   ],
   j = [
     { value: `off`, label: `Off` },
@@ -31,12 +32,27 @@ var p = e(n(), 1),
     { value: `local`, label: `Work locally` },
     { value: `remote`, label: `Connect to remote host` },
   ],
-  P = [`gpt-oss:120b`, `qwen3.5:9.7b`, `qwen3.5:122b`],
+  P = [],
+  Q = [`gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex`, `gpt-5.3-codex-spark`, `gpt-5.2`],
   $ = `codex-managed`,
-  ee = `tailscale-websocket`;
+  ee = `tailscale-websocket`,
+  te = `/Users/mrttas/Applications/Local LLM Console.app/Contents/Resources/local-llm-console/config/local-model-catalog.json`,
+  re = `/Users/mrttas/.codex-local-desktop/config.toml`;
 
 function v(e, t = ``, n = ``) {
   return typeof e == `string` && e.trim().length > 0 ? e.trim() : t || n;
+}
+
+function normalizeProvider(e) {
+  return e === `openai` || e === `codex` ? `codex` : e;
+}
+
+function missingRuntimeSettingsMessage(e) {
+  if (e === `ollama`)
+    return `Ollama is selected, but no local Ollama model was found. Install and start Ollama, then pull or select a model, or choose Codex Cloud.`;
+  if (e === `lmstudio`)
+    return `LM Studio is selected, but no local LM Studio model was found. Start LM Studio with a loaded model, or choose Codex Cloud.`;
+  return `Provider, model, and reasoning effort are required. Local providers also require a catalog path.`;
 }
 
 function b(e) {
@@ -61,10 +77,11 @@ function S(e, t = `443`) {
 }
 
 function C(e) {
+  let t = normalizeProvider(v(e?.model_provider, v(e?.oss_provider, `ollama`)));
   return {
     launchMode: `local`,
-    provider: v(e?.model_provider, v(e?.oss_provider, `ollama`)),
-    model: v(e?.model, `gpt-oss:120b`),
+    provider: t,
+    model: v(e?.model, t === `codex` ? `gpt-5.4` : ``),
     reasoning: v(e?.model_reasoning_effort, `medium`),
     catalogPath: v(e?.model_catalog_json, ``),
     remoteTransport: N(e?.local_llm_console_remote_transport),
@@ -84,11 +101,12 @@ function L(e) {
   return JSON.stringify(e);
 }
 
-function T(e) {
-  let t = P.map((e) => ({ value: e, label: e }));
-  return e != null && e.length > 0 && !P.includes(e)
-    ? [{ value: e, label: `${e} (current)` }, ...t]
-    : t;
+function T(e, t) {
+  let n = t === `codex` ? Q : P,
+    r = n.map((e) => ({ value: e, label: e }));
+  return e != null && e.length > 0 && !n.includes(e)
+    ? [{ value: e, label: `${e} (current)` }, ...r]
+    : r;
 }
 
 function readLocalLlmConsoleSessionState() {
@@ -460,7 +478,7 @@ function RuntimeSettingsContent(props = {}) {
     [ae, oe] = (0, p.useState)(null),
     se = e?.configWriteTarget?.filePath ?? ``,
     ce = e?.configWriteTarget?.expectedVersion ?? null,
-    le = (0, p.useMemo)(() => T(w.model), [w.model]),
+    le = (0, p.useMemo)(() => T(w.model, w.provider), [w.model, w.provider]),
     ue = localSignature(t) !== localSignature(w),
     de = remoteSignature(t) !== remoteSignature(w),
     fe = ne ? de : ue,
@@ -468,7 +486,7 @@ function RuntimeSettingsContent(props = {}) {
       w.provider.trim().length === 0 ||
       w.model.trim().length === 0 ||
       w.reasoning.trim().length === 0 ||
-      w.catalogPath.trim().length === 0,
+      (w.provider !== `codex` && w.catalogPath.trim().length === 0),
     me = !hasValidRemoteHostUrl(w.remoteUrl),
     he =
       w.hostListenUrl.trim().length === 0 ||
@@ -485,9 +503,11 @@ function RuntimeSettingsContent(props = {}) {
         K = n.hostAction ?? `reload`,
         z = n.scope === `remote`,
         a = W.provider.trim(),
+        B = a === `codex` ? `openai` : a,
         o = W.model.trim(),
         s = W.reasoning.trim(),
         c = W.catalogPath.trim(),
+        D = a === `codex` && c.length === 0 ? te : c,
         l = `tailscale`,
         q = W.remoteUrl.trim(),
         H = W.remoteAuthTokenEnv.trim(),
@@ -501,11 +521,11 @@ function RuntimeSettingsContent(props = {}) {
         (a.length === 0 ||
           o.length === 0 ||
           s.length === 0 ||
-          c.length === 0)
+          (a !== `codex` && c.length === 0))
       ) {
         U({
           tone: `error`,
-          text: `Provider, model, reasoning effort, and catalog path are all required for local settings.`,
+          text: missingRuntimeSettingsMessage(a),
         });
         return !1;
       }
@@ -536,14 +556,14 @@ function RuntimeSettingsContent(props = {}) {
       });
       try {
         await i.mutateAsync({
-          filePath: se || null,
-          expectedVersion: ce,
+          filePath: se || re,
+          expectedVersion: se ? ce : null,
           edits: [
-            { keyPath: `model_provider`, value: a },
-            { keyPath: `oss_provider`, value: a },
+            { keyPath: `model_provider`, value: B },
+            { keyPath: `oss_provider`, value: a === `codex` ? `ollama` : a },
             { keyPath: `model`, value: o },
             { keyPath: `model_reasoning_effort`, value: s },
-            { keyPath: `model_catalog_json`, value: c },
+            { keyPath: `model_catalog_json`, value: D },
             { keyPath: `local_llm_console_mode`, value: `local` },
             {
               keyPath: `local_llm_console_remote_transport`,
@@ -597,10 +617,14 @@ function RuntimeSettingsContent(props = {}) {
           text: n.successText ?? (z ? `Saved remote settings.` : `Saved runtime configuration.`),
         });
         return !0;
-      } catch {
+      } catch (e) {
         U({
           tone: `error`,
-          text: n.errorText ?? `Unable to save runtime configuration.`,
+          text:
+            n.errorText ??
+            (e instanceof Error && e.message.trim().length > 0
+              ? e.message
+              : `Unable to save runtime configuration.`),
         });
         return !1;
       }
@@ -953,7 +977,18 @@ function RuntimeSettingsContent(props = {}) {
                         options: g,
                         value: w.provider,
                         onChange: (e) => {
-                          E((t) => ({ ...t, provider: e }));
+                          E((t) => ({
+                            ...t,
+                            provider: e,
+                            model:
+                              e === `codex`
+                                ? Q.includes(t.model)
+                                  ? t.model
+                                  : `gpt-5.4`
+                                : P.includes(t.model)
+                                  ? t.model
+                                  : ``,
+                          }));
                         },
                       }),
                     }),
@@ -1000,11 +1035,15 @@ function RuntimeSettingsContent(props = {}) {
                       className: `ml-5 w-[32rem] max-w-full`,
                       children: (0, m.jsx)(k, {
                         value: w.catalogPath,
+                        disabled: w.provider === `codex`,
                         onChange: (e) => {
                           let t = e.target.value;
                           E((e) => ({ ...e, catalogPath: t }));
                         },
-                        placeholder: `/home/you/.codex-local-desktop-models.json`,
+                        placeholder:
+                          w.provider === `codex`
+                            ? `Not used for Codex Cloud`
+                            : `/home/you/.codex-local-desktop-models.json`,
                       }),
                     }),
                   }),
@@ -1048,7 +1087,7 @@ function RuntimeSettingsContent(props = {}) {
                     be
                       ? (0, m.jsx)(M, {
                           tone: `error`,
-                          text: `Provider, model, reasoning effort, and catalog path are all required before saving local settings.`,
+                          text: missingRuntimeSettingsMessage(w.provider),
                         })
                       : null,
                     D != null ? (0, m.jsx)(M, { tone: D.tone, text: D.text }) : null,

@@ -17,18 +17,23 @@ CODEX_HELPER="${LOCAL_LLM_CONSOLE_CODEX_HELPER:-$REPO_ROOT/launcher/local-ai-con
 
 mkdir -p "$STATE_DIR" "$CACHE_DIR"
 
-mapfile -t LOCAL_LLM_CONSOLE_HOST_CONFIG < <(
+LOCAL_LLM_CONSOLE_HOST_CONFIG="$(
   python3 - "$CONFIG_PATH" <<'PY'
 from pathlib import Path
 import sys
-import tomllib
 from urllib.parse import urlparse
 
 path = Path(sys.argv[1])
 config = {}
 if path.is_file():
-    with path.open("rb") as handle:
-        config = tomllib.load(handle)
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        config[key] = value
 
 
 def clean_string(value, default=""):
@@ -73,24 +78,33 @@ proxy_port = parsed.port or 8765
 
 print("on" if host_enabled else "off")
 print(provider)
+print(clean_identifier(config.get("model"), "gpt-oss:120b"))
+print(clean_identifier(config.get("model_reasoning_effort"), "medium"))
 print(host_transport)
 print(host_listen_url)
 print(str(host_https_port))
 print(proxy_host)
 print(str(proxy_port))
 PY
-)
+)"
 
-HOST_ENABLED="${LOCAL_LLM_CONSOLE_HOST_CONFIG[0]:-off}"
-LOCAL_PROVIDER="${LOCAL_LLM_CONSOLE_HOST_CONFIG[1]:-ollama}"
-HOST_TRANSPORT="${LOCAL_LLM_CONSOLE_HOST_CONFIG[2]:-tailscale}"
-HOST_LISTEN_URL="${LOCAL_LLM_CONSOLE_HOST_CONFIG[3]:-ws://127.0.0.1:8765}"
-HOST_HTTPS_PORT="${LOCAL_LLM_CONSOLE_HOST_CONFIG[4]:-443}"
-HOST_PROXY_HOST="${LOCAL_LLM_CONSOLE_HOST_CONFIG[5]:-127.0.0.1}"
-HOST_PROXY_PORT="${LOCAL_LLM_CONSOLE_HOST_CONFIG[6]:-8765}"
+LOCAL_LLM_CONSOLE_HOST_VALUES=()
+while IFS= read -r line; do
+  LOCAL_LLM_CONSOLE_HOST_VALUES+=("$line")
+done <<<"$LOCAL_LLM_CONSOLE_HOST_CONFIG"
+
+HOST_ENABLED="${LOCAL_LLM_CONSOLE_HOST_VALUES[0]:-off}"
+LOCAL_PROVIDER="${LOCAL_LLM_CONSOLE_HOST_VALUES[1]:-ollama}"
+LOCAL_MODEL="${LOCAL_LLM_CONSOLE_HOST_VALUES[2]:-gpt-oss:120b}"
+LOCAL_REASONING="${LOCAL_LLM_CONSOLE_HOST_VALUES[3]:-medium}"
+HOST_TRANSPORT="${LOCAL_LLM_CONSOLE_HOST_VALUES[4]:-tailscale}"
+HOST_LISTEN_URL="${LOCAL_LLM_CONSOLE_HOST_VALUES[5]:-ws://127.0.0.1:8765}"
+HOST_HTTPS_PORT="${LOCAL_LLM_CONSOLE_HOST_VALUES[6]:-443}"
+HOST_PROXY_HOST="${LOCAL_LLM_CONSOLE_HOST_VALUES[7]:-127.0.0.1}"
+HOST_PROXY_PORT="${LOCAL_LLM_CONSOLE_HOST_VALUES[8]:-8765}"
 
 log() {
-  printf '[%s] %s\n' "$(date -Is)" "$*" >>"$LOG_FILE"
+  printf '[%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*" >>"$LOG_FILE"
 }
 
 pid_is_alive() {
@@ -173,6 +187,18 @@ start_app_server() {
   fi
 
   log "starting codex app-server listen=${HOST_LISTEN_URL} provider=${LOCAL_PROVIDER}"
+  if [[ "$LOCAL_PROVIDER" == "codex" || "$LOCAL_PROVIDER" == "openai" ]]; then
+    CODEX_HOME="${LOCAL_LLM_CONSOLE_CLOUD_CODEX_HOME:-$HOME/.codex}" nohup "$CODEX_HELPER" \
+      app-server \
+      --listen "$HOST_LISTEN_URL" \
+      -c 'model_provider="openai"' \
+      -c "model=\"$LOCAL_MODEL\"" \
+      -c "model_reasoning_effort=\"$LOCAL_REASONING\"" \
+      >>"$LOG_FILE" 2>&1 </dev/null &
+    echo "$!" >"$PID_FILE"
+    return 0
+  fi
+
   nohup "$CODEX_HELPER" \
     app-server \
     --disable plugins \
