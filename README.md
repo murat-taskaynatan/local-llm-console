@@ -15,7 +15,7 @@ This repository includes the Local LLM Console launchers, patched webview, deskt
 
 ## What This Repo Is Not
 
-- Not an OpenAI-hosted Codex cloud client
+- Not a replacement for OpenAI's hosted Codex service
 
 ## Included
 
@@ -24,7 +24,7 @@ This repository includes the Local LLM Console launchers, patched webview, deskt
 - `codex-app/.codex-linux/local-ai-console-x11-title-fix.sh`
   X11 window-title fix for the branded local app window
 - `launcher/codex-local-desktop-cli`
-  Local Codex CLI wrapper configured for Ollama
+  Local runtime wrapper for Ollama, LM Studio, and Codex Cloud modes
 - `launcher/local-ai-console-launch`
   User-facing launcher entry point
 - `launcher/local-ai-console-host-service`
@@ -118,13 +118,20 @@ The desktop file expects `local-ai-console-launch` to be available on `PATH`, an
 
 ## Models
 
+The generated app supports:
+
+- Local providers such as Ollama and LM Studio
+- Codex Cloud as a cloud provider option inside the same app
+
 The included local model catalog is configured for local Ollama models.
 
-The generated app uses the local CLI wrapper for Ollama:
+The generated app uses the local CLI wrapper for local providers:
 
 ```bash
 codex --disable plugins -c 'model_provider="ollama"'
 ```
+
+If you switch the provider to `Codex Cloud`, Local LLM Console uses the bundled Codex runtime to connect to the cloud path from inside this app. You need to be signed in with a valid OpenAI/Codex account session in Local LLM Console. You do not need a separate Codex Desktop installation or a separate Codex app window kept open.
 
 ## Remote Host Sessions
 
