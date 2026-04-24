@@ -1,5 +1,8 @@
 (() => {
   const SETTINGS_PATH = `/settings/general-settings`;
+  const SESSION_STATE_PATH = `/__local-llm-console/state`;
+  const SESSION_MODE_PATH = `/__local-llm-console/session-mode`;
+  const SESSION_STATE_EVENT = `local-llm-console-state`;
   const ANNOUNCEMENT_PRIMARY_PATTERNS = [
     /introducing gpt-5(?:\.[0-9]+)?/i,
     /the most capable model for complex,\s*professional work,\s*coding and agentic workflows/i,
@@ -36,12 +39,145 @@
     return hasPrimary && hasAction;
   }
 
-  function openLocalSettings() {
-    if (window.location.pathname === SETTINGS_PATH) {
+  function currentWindowHasRemoteHost() {
+    try {
+      return new URL(window.location.href).searchParams.get(`hostId`)?.trim().length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  function openLocalSettings(section = `general-settings`) {
+    const nextSection =
+      typeof section === `string` && section.trim().length > 0 ? section.trim() : `general-settings`;
+    const nextPath = `/settings/${nextSection}`;
+    if (window.location.pathname === nextPath) {
       return;
     }
-    window.history.pushState({}, ``, SETTINGS_PATH);
+    window.history.pushState({}, ``, nextPath);
     window.dispatchEvent(new PopStateEvent(`popstate`));
+  }
+
+  function normalizeMode(value) {
+    return value === `remote` ? `remote` : `local`;
+  }
+
+  function normalizeState(value) {
+    const state = value && typeof value === `object` ? value : {};
+    return {
+      currentMode: currentWindowHasRemoteHost() ? `remote` : normalizeMode(state.currentMode),
+      hasRemoteSettings: Boolean(state.hasRemoteSettings),
+      remoteUrl:
+        typeof state.remoteUrl === `string` && state.remoteUrl.trim().length > 0
+          ? state.remoteUrl.trim()
+          : ``,
+      remoteTransport:
+        typeof state.remoteTransport === `string` && state.remoteTransport.trim().length > 0
+          ? state.remoteTransport.trim()
+          : `tailscale`,
+    };
+  }
+
+  function setSessionState(nextState) {
+    const normalized = normalizeState(nextState);
+    window.__localLLMConsoleState = normalized;
+    window.dispatchEvent(
+      new CustomEvent(SESSION_STATE_EVENT, {
+        detail: normalized,
+      }),
+    );
+    return normalized;
+  }
+
+  function getSessionState() {
+    if (!window.__localLLMConsoleState) {
+      window.__localLLMConsoleState = normalizeState({});
+    }
+    return window.__localLLMConsoleState;
+  }
+
+  function isRemoteConnected() {
+    return getSessionState().currentMode === `remote` && currentWindowHasRemoteHost();
+  }
+
+  async function refreshSessionState() {
+    const response = await fetch(SESSION_STATE_PATH, {
+      cache: `no-store`,
+      headers: {
+        Accept: `application/json`,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Unable to read Local LLM Console session state.`);
+    }
+    const payload = await response.json();
+    return setSessionState(payload);
+  }
+
+  async function switchSessionMode(mode) {
+    const response = await fetch(SESSION_MODE_PATH, {
+      method: `POST`,
+      headers: {
+        Accept: `application/json`,
+        "Content-Type": `application/json`,
+      },
+      body: JSON.stringify({ mode: normalizeMode(mode) }),
+    });
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch (error) {
+      payload = {};
+    }
+    if (!response.ok) {
+      throw new Error(
+        typeof payload.error === `string` && payload.error.trim().length > 0
+          ? payload.error
+          : `Unable to switch Local LLM Console session mode.`,
+      );
+    }
+    return setSessionState({
+      ...getSessionState(),
+      ...payload,
+      currentMode: currentWindowHasRemoteHost() ? `remote` : normalizeMode(mode),
+    });
+  }
+
+  async function ensureCurrentSessionSwitchHelper() {
+    if (typeof window.__localLLMConsoleSwitchCurrentSession === `function`) {
+      return window.__localLLMConsoleSwitchCurrentSession;
+    }
+    try {
+      await import(`./local-models-settings-Dt4h1YLM.js`);
+    } catch (error) {
+      console.error(error);
+    }
+    return typeof window.__localLLMConsoleSwitchCurrentSession === `function`
+      ? window.__localLLMConsoleSwitchCurrentSession
+      : null;
+  }
+
+  async function handleRemotePicker() {
+    let state;
+    try {
+      state = await refreshSessionState();
+    } catch (error) {
+      state = getSessionState();
+    }
+    if (!state.hasRemoteSettings) {
+      openLocalSettings(`remote-settings`);
+      return { action: `configure`, state };
+    }
+    if (state.currentMode === `remote`) {
+      return { action: `ready`, state };
+    }
+    const switchCurrentSession = await ensureCurrentSessionSwitchHelper();
+    if (switchCurrentSession == null) {
+      openLocalSettings(`remote-settings`);
+      return { action: `configure`, state };
+    }
+    await switchCurrentSession(`remote`, { remoteUrl: state.remoteUrl });
+    return { action: `switching`, state: { ...state, currentMode: `remote` } };
   }
 
   function findAnnouncementContainer(node) {
@@ -116,10 +252,28 @@
   }
 
   window.__openLocalSettings = openLocalSettings;
+  window.__getLocalLLMConsoleState = getSessionState;
+  window.__isLocalLLMConsoleRemoteConnected = isRemoteConnected;
+  window.__refreshLocalLLMConsoleState = refreshSessionState;
+  window.__switchLocalLLMConsoleMode = switchSessionMode;
+  window.__handleLocalLLMConsoleRemotePicker = () =>
+    handleRemotePicker().catch((error) => {
+      console.error(error);
+      openLocalSettings(`remote-settings`);
+    });
+  setSessionState(getSessionState());
 
   if (document.readyState === `loading`) {
-    document.addEventListener(`DOMContentLoaded`, startObserver, { once: true });
+    document.addEventListener(
+      `DOMContentLoaded`,
+      () => {
+        startObserver();
+        refreshSessionState().catch(() => {});
+      },
+      { once: true },
+    );
   } else {
     startObserver();
+    refreshSessionState().catch(() => {});
   }
 })();

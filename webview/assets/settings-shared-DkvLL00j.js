@@ -25,6 +25,11 @@ var c = n({
     defaultMessage: `Configuration`,
     description: `Title for configuration settings section`,
   },
+  "local-models": {
+    id: `settings.nav.local-models`,
+    defaultMessage: `Remote settings`,
+    description: `Title for remote settings section`,
+  },
   "data-controls": {
     id: `settings.nav.data-controls`,
     defaultMessage: `Archived chats`,
@@ -111,6 +116,12 @@ function p(e) {
         id: `settings.section.agent`,
         defaultMessage: `Configuration`,
         description: `Title for configuration settings section`,
+      });
+    case `local-models`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.local-models`,
+        defaultMessage: `Remote settings`,
+        description: `Title for remote settings section`,
       });
     case `data-controls`:
       return (0, u.jsx)(t, {

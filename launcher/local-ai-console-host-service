@@ -1,0 +1,220 @@
+#!/bin/bash
+set -euo pipefail
+
+ACTION="${1:-reload}"
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex-local-desktop}"
+CONFIG_PATH="${CODEX_HOME}/config.toml"
+XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+STATE_DIR="${XDG_STATE_HOME}/local-ai-console-host"
+CACHE_DIR="${XDG_CACHE_HOME}/local-ai-console"
+PID_FILE="${STATE_DIR}/app-server.pid"
+SERVE_PORT_FILE="${STATE_DIR}/tailscale-https-port"
+LOG_FILE="${CACHE_DIR}/host-service.log"
+
+mkdir -p "$STATE_DIR" "$CACHE_DIR"
+
+mapfile -t LOCAL_LLM_CONSOLE_HOST_CONFIG < <(
+  python3 - "$CONFIG_PATH" <<'PY'
+from pathlib import Path
+import sys
+import tomllib
+from urllib.parse import urlparse
+
+path = Path(sys.argv[1])
+config = {}
+if path.is_file():
+    with path.open("rb") as handle:
+        config = tomllib.load(handle)
+
+
+def clean_string(value, default=""):
+    if not isinstance(value, str):
+        return default
+    value = value.strip()
+    return value or default
+
+
+def clean_identifier(value, default):
+    value = clean_string(value, default)
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-")
+    return value if value and set(value) <= allowed else default
+
+
+def clean_bool(value):
+    return value is True or value == "true" or value == "on"
+
+
+def clean_port(value, default=443):
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        parsed = int(value.strip())
+        if parsed > 0:
+            return parsed
+    return default
+
+
+provider = clean_identifier(
+    config.get("model_provider") or config.get("oss_provider"),
+    "ollama",
+)
+host_enabled = clean_bool(config.get("local_llm_console_host_enabled"))
+host_transport = clean_string(config.get("local_llm_console_host_transport"), "tailscale")
+host_listen_url = clean_string(config.get("local_llm_console_host_listen_url"), "ws://127.0.0.1:8765")
+host_https_port = clean_port(config.get("local_llm_console_host_https_port"), 443)
+
+parsed = urlparse(host_listen_url)
+proxy_host = parsed.hostname or "127.0.0.1"
+proxy_port = parsed.port or 8765
+
+print("on" if host_enabled else "off")
+print(provider)
+print(host_transport)
+print(host_listen_url)
+print(str(host_https_port))
+print(proxy_host)
+print(str(proxy_port))
+PY
+)
+
+HOST_ENABLED="${LOCAL_LLM_CONSOLE_HOST_CONFIG[0]:-off}"
+LOCAL_PROVIDER="${LOCAL_LLM_CONSOLE_HOST_CONFIG[1]:-ollama}"
+HOST_TRANSPORT="${LOCAL_LLM_CONSOLE_HOST_CONFIG[2]:-tailscale}"
+HOST_LISTEN_URL="${LOCAL_LLM_CONSOLE_HOST_CONFIG[3]:-ws://127.0.0.1:8765}"
+HOST_HTTPS_PORT="${LOCAL_LLM_CONSOLE_HOST_CONFIG[4]:-443}"
+HOST_PROXY_HOST="${LOCAL_LLM_CONSOLE_HOST_CONFIG[5]:-127.0.0.1}"
+HOST_PROXY_PORT="${LOCAL_LLM_CONSOLE_HOST_CONFIG[6]:-8765}"
+
+log() {
+  printf '[%s] %s\n' "$(date -Is)" "$*" >>"$LOG_FILE"
+}
+
+pid_is_alive() {
+  local pid="$1"
+  [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1
+}
+
+read_existing_pid() {
+  if [[ -f "$PID_FILE" ]]; then
+    cat "$PID_FILE" 2>/dev/null || true
+  fi
+}
+
+stop_app_server() {
+  local existing_pid
+  existing_pid="$(read_existing_pid)"
+
+  if ! pid_is_alive "$existing_pid"; then
+    rm -f "$PID_FILE"
+    return 0
+  fi
+
+  log "stopping codex app-server pid=${existing_pid}"
+  kill "$existing_pid" >/dev/null 2>&1 || true
+  sleep 0.5
+
+  if pid_is_alive "$existing_pid"; then
+    kill -9 "$existing_pid" >/dev/null 2>&1 || true
+    sleep 0.2
+  fi
+
+  rm -f "$PID_FILE"
+}
+
+clear_tailscale_publish() {
+  if [[ "$HOST_TRANSPORT" != "tailscale" ]]; then
+    rm -f "$SERVE_PORT_FILE"
+    return 0
+  fi
+
+  if ! command -v tailscale >/dev/null 2>&1; then
+    rm -f "$SERVE_PORT_FILE"
+    return 0
+  fi
+
+  local saved_port=""
+  if [[ -f "$SERVE_PORT_FILE" ]]; then
+    saved_port="$(cat "$SERVE_PORT_FILE" 2>/dev/null || true)"
+  fi
+
+  local ports=()
+  if [[ -n "$saved_port" ]]; then
+    ports+=("$saved_port")
+  fi
+  if [[ -n "$HOST_HTTPS_PORT" && "$HOST_HTTPS_PORT" != "$saved_port" ]]; then
+    ports+=("$HOST_HTTPS_PORT")
+  fi
+
+  local port=""
+  for port in "${ports[@]}"; do
+    log "clearing tailscale serve https=${port}"
+    tailscale serve --https="$port" off >>"$LOG_FILE" 2>&1 || log "tailscale serve clear failed for https=${port}"
+  done
+
+  rm -f "$SERVE_PORT_FILE"
+}
+
+start_app_server() {
+  local existing_pid
+  existing_pid="$(read_existing_pid)"
+
+  if pid_is_alive "$existing_pid"; then
+    log "app-server already running pid=${existing_pid}"
+    return 0
+  fi
+
+  log "starting codex app-server listen=${HOST_LISTEN_URL} provider=${LOCAL_PROVIDER}"
+  nohup /usr/local/bin/codex \
+    app-server \
+    --disable plugins \
+    --listen "$HOST_LISTEN_URL" \
+    -c "model_provider=\"$LOCAL_PROVIDER\"" \
+    -c "oss_provider=\"$LOCAL_PROVIDER\"" \
+    >>"$LOG_FILE" 2>&1 </dev/null &
+  echo "$!" >"$PID_FILE"
+}
+
+ensure_tailscale_publish() {
+  if [[ "$HOST_TRANSPORT" != "tailscale" ]]; then
+    rm -f "$SERVE_PORT_FILE"
+    return 0
+  fi
+
+  if command -v tailscale >/dev/null 2>&1; then
+    log "ensuring tailscale serve https=${HOST_HTTPS_PORT} target=http://${HOST_PROXY_HOST}:${HOST_PROXY_PORT}"
+    tailscale serve --bg --https="$HOST_HTTPS_PORT" "http://${HOST_PROXY_HOST}:${HOST_PROXY_PORT}" >>"$LOG_FILE" 2>&1 || log "tailscale serve failed"
+    printf '%s\n' "$HOST_HTTPS_PORT" >"$SERVE_PORT_FILE"
+  else
+    log "tailscale CLI not found; skipping tailscale serve publish step"
+  fi
+}
+
+case "$ACTION" in
+  start)
+    if [[ "$HOST_ENABLED" != "on" ]]; then
+      log "host mode disabled; skipping start"
+      exit 0
+    fi
+    start_app_server
+    ensure_tailscale_publish
+    ;;
+  stop)
+    stop_app_server
+    clear_tailscale_publish
+    ;;
+  reload)
+    stop_app_server
+    clear_tailscale_publish
+    if [[ "$HOST_ENABLED" != "on" ]]; then
+      log "host mode disabled; reload completed with host service stopped"
+      exit 0
+    fi
+    start_app_server
+    ensure_tailscale_publish
+    ;;
+  *)
+    echo "Unknown action: $ACTION" >&2
+    exit 1
+    ;;
+esac

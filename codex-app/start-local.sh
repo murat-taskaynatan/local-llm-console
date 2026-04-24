@@ -23,15 +23,18 @@ export CODEX_DESKTOP_DESKTOP_ENTRY="${CODEX_DESKTOP_DESKTOP_ENTRY:-local-ai-cons
 export CODEX_DESKTOP_ICON_NAME="${CODEX_DESKTOP_ICON_NAME:-local-ai-console-gradient}"
 export CHROME_DESKTOP="${CHROME_DESKTOP:-local-ai-console.desktop}"
 export CODEX_DESKTOP_EXPECTED_TITLE="${CODEX_DESKTOP_EXPECTED_TITLE:-Local LLM Console}"
-export CODEX_DESKTOP_LOCAL_PROFILE_VERSION="${CODEX_DESKTOP_LOCAL_PROFILE_VERSION:-v10}"
-export CODEX_DESKTOP_LOCAL_RUNTIME_VERSION="${CODEX_DESKTOP_LOCAL_RUNTIME_VERSION:-v14}"
-export CODEX_DESKTOP_LOCAL_RUNTIME_PATCH_VERSION="${CODEX_DESKTOP_LOCAL_RUNTIME_PATCH_VERSION:-v7}"
-export CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION="${CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION:-v6}"
-export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config/local-ai-console/xdg-config-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}}"
-export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache/local-ai-console/xdg-cache-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}}"
-export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state/local-ai-console-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}}"
+export CODEX_DESKTOP_LOCAL_PROFILE_VERSION="v16"
+export CODEX_DESKTOP_LOCAL_RUNTIME_VERSION="v15"
+export CODEX_DESKTOP_LOCAL_RUNTIME_PATCH_VERSION="v11"
+export CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION="v16"
+export XDG_CONFIG_HOME="$HOME/.config/local-ai-console/xdg-config-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}"
+export XDG_CACHE_HOME="$HOME/.cache/local-ai-console/xdg-cache-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}"
+export XDG_STATE_HOME="$HOME/.local/state/local-ai-console-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${USER_UID}}"
+export CODEX_DESKTOP_WEBVIEW_SERVER_SCRIPT="${CODEX_DESKTOP_WEBVIEW_SERVER_SCRIPT:-$REPO_ROOT/launcher/local-ai-console-webview-server.py}"
+export LOCAL_LLM_CONSOLE_CONFIG_PATH="${LOCAL_LLM_CONSOLE_CONFIG_PATH:-$CODEX_HOME/config.toml}"
+export LOCAL_LLM_CONSOLE_RELAUNCH_COMMAND="${LOCAL_LLM_CONSOLE_RELAUNCH_COMMAND:-$REPO_ROOT/launcher/local-ai-console-launch}"
 
 if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "${XDG_RUNTIME_DIR}/bus" ]]; then
     export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
@@ -59,9 +62,9 @@ fi
 
 LOCAL_USER_DATA_DIR="${CODEX_DESKTOP_USER_DATA_DIR:-$XDG_CONFIG_HOME/LocalAIConsole}"
 LOCAL_WEBVIEW_SOURCE_DIR="${CODEX_DESKTOP_LOCAL_SOURCE_WEBVIEW_DIR:-$REPO_ROOT/webview}"
-LOCAL_WEBVIEW_DIR="${CODEX_DESKTOP_WEBVIEW_DIR:-$XDG_CACHE_HOME/webview-patched-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}}"
+LOCAL_WEBVIEW_DIR="$XDG_CACHE_HOME/webview-patched-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}"
 LOCAL_WEBVIEW_STAMP="${LOCAL_WEBVIEW_DIR}.stamp"
-LOCAL_RUNTIME_ROOT="${CODEX_DESKTOP_LOCAL_RUNTIME_ROOT:-$XDG_DATA_HOME/local-ai-console/runtime-${CODEX_DESKTOP_LOCAL_RUNTIME_VERSION}}"
+LOCAL_RUNTIME_ROOT="$XDG_DATA_HOME/local-ai-console/runtime-${CODEX_DESKTOP_LOCAL_RUNTIME_VERSION}"
 LOCAL_RUNTIME_APP_DIR="${CODEX_DESKTOP_LOCAL_RUNTIME_APP_DIR:-$LOCAL_RUNTIME_ROOT/app}"
 LOCAL_RUNTIME_STAMP="${LOCAL_RUNTIME_ROOT}/source-stamp.txt"
 LOCAL_SHELL_ASAR_STAMP="${LOCAL_RUNTIME_ROOT}/shell-asar-stamp.txt"
@@ -69,7 +72,39 @@ LOCAL_RUNTIME_ICON_PATH="${CODEX_DESKTOP_WINDOW_ICON_PATH:-$REPO_ROOT/assets/loc
 LOCAL_BOOTSTRAP_SOURCE_PATH="${CODEX_DESKTOP_LOCAL_BOOTSTRAP_SOURCE_PATH:-$REPO_ROOT/webview/assets/local-ai-console-bootstrap.js}"
 LOCAL_SOURCE_ASAR=""
 export CODEX_DESKTOP_POST_LAUNCH_HOOK="${CODEX_DESKTOP_POST_LAUNCH_HOOK:-$SCRIPT_DIR/.codex-linux/local-ai-console-x11-title-fix.sh}"
+LOCAL_HOST_SERVICE_HELPER="${CODEX_DESKTOP_LOCAL_HOST_SERVICE_HELPER:-$REPO_ROOT/launcher/local-ai-console-host-service}"
+export LOCAL_LLM_CONSOLE_HOST_SERVICE_HELPER="${LOCAL_LLM_CONSOLE_HOST_SERVICE_HELPER:-$LOCAL_HOST_SERVICE_HELPER}"
 mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$LOCAL_USER_DATA_DIR" "$(dirname "$LOCAL_WEBVIEW_DIR")" "$LOCAL_RUNTIME_ROOT" "$BASE_RESOURCES_DIR"
+
+mapfile -t LOCAL_LLM_CONSOLE_LAUNCH_STATE < <(
+  python3 - "$LOCAL_LLM_CONSOLE_CONFIG_PATH" <<'PY'
+from pathlib import Path
+import sys
+import tomllib
+
+path = Path(sys.argv[1])
+config = {}
+if path.is_file():
+    with path.open("rb") as handle:
+        config = tomllib.load(handle)
+
+
+def clean_string(value, default=""):
+    if not isinstance(value, str):
+        return default
+    value = value.strip()
+    return value or default
+
+
+mode = clean_string(config.get("local_llm_console_mode"), "local")
+if mode not in {"local", "remote"}:
+    mode = "local"
+
+print(mode)
+PY
+)
+
+export LOCAL_LLM_CONSOLE_ACTIVE_MODE="${LOCAL_LLM_CONSOLE_LAUNCH_STATE[0]:-local}"
 
 if [[ -f "$BASE_SHELL_ASAR" && ! -f "$BASE_UPSTREAM_SOURCE_ASAR" ]]; then
     cp -p "$BASE_SHELL_ASAR" "$BASE_UPSTREAM_SOURCE_ASAR"
@@ -211,6 +246,36 @@ replace_once(
 main_bundle = root / ".vite" / "build" / "main-C8I_nqq_.js"
 replace_once(
     main_bundle,
+    "function Jy({buildFlavor:n,allowDevtools:i,allowInspectElement:o,allowDebugMenu:s,errorReporter:c,globalState:l,getGlobalStateForHost:u,desktopRoot:d,preloadPath:f,repoRoot:p,isMacOS:m,isWindows:h,isDevMode:g,canHideLastLocalWindowToTray:_,disposables:v})",
+    "function Jy({buildFlavor:n,allowDevtools:i,allowInspectElement:o,allowDebugMenu:s,errorReporter:c,globalState:l,getGlobalStateForHost:u,desktopRoot:d,preloadPath:f,repoRoot:p,isMacOS:m,isWindows:h,isDevMode:g,canHideLastLocalWindowToTray:_,disposables:v,disableQuitConfirmationPrompt:Q,quitState:X})",
+    error_message="Local desktop runtime patch failed: window services signature snippet not found",
+)
+replace_once(
+    main_bundle,
+    "let S=new Ny({desktopRoot:d,iconDirectoryName:fn,getGlobalStateForHost:u,moduleDir:__dirname,preloadPath:f,repoRoot:p,allowDevtools:i,allowInspectElement:o,allowDebugMenu:s,errorReporter:c,canHideLastLocalWindowToTray:_}),C=new A_(S,V)",
+    "let S=new Ny({desktopRoot:d,iconDirectoryName:fn,getGlobalStateForHost:u,moduleDir:__dirname,preloadPath:f,repoRoot:p,allowDevtools:i,allowInspectElement:o,allowDebugMenu:s,errorReporter:c,canHideLastLocalWindowToTray:_,disableQuitConfirmationPrompt:Q,quitState:X}),C=new A_(S,V)",
+    error_message="Local desktop runtime patch failed: window services Ny options snippet not found",
+)
+replace_once(
+    main_bundle,
+    "_&&O.on(`close`,e=>{this.persistPrimaryWindowBounds(O,d);let t=this.getPrimaryWindows(d).some(e=>e!==O);if(process.platform===`win32`&&d===`local`&&!this.isAppQuitting&&this.options.canHideLastLocalWindowToTray?.()===!0&&!t){e.preventDefault(),O.hide();return}if(process.platform===`darwin`&&!this.isAppQuitting&&!t){if(O.isFullScreen()){e.preventDefault(),O.once(`leave-full-screen`,()=>{O.isDestroyed()||O.hide()}),O.setFullScreen(!1);return}e.preventDefault(),O.hide()}});",
+    "_&&O.on(`close`,e=>{this.persistPrimaryWindowBounds(O,d);let t=this.getPrimaryWindows(d).some(e=>e!==O);if(process.platform===`win32`&&d===`local`&&!this.isAppQuitting&&this.options.canHideLastLocalWindowToTray?.()===!0&&!t){e.preventDefault(),O.hide();return}if(process.platform!==`darwin`&&process.platform!==`win32`&&d===`local`&&!this.isAppQuitting&&!t&&!this.options.disableQuitConfirmationPrompt&&!this.options.quitState?.canQuitWithoutPrompt()){let n=`Local LLM Console`;if(t.dialog.showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`],defaultId:0,cancelId:1,noLink:!0,title:`Quit ${n}?`,message:``,detail:`Any local threads running on this machine will be interrupted and scheduled automations won't run`})!==0){e.preventDefault(),Promise.resolve().then(()=>{O.isDestroyed()||(O.show(),O.focus())});return}this.options.quitState?.markQuitApproved(),this.markAppQuitting()}if(process.platform===`darwin`&&!this.isAppQuitting&&!t){if(O.isFullScreen()){e.preventDefault(),O.once(`leave-full-screen`,()=>{O.isDestroyed()||O.hide()}),O.setFullScreen(!1);return}e.preventDefault(),O.hide()}});",
+    error_message="Local desktop runtime patch failed: last-window close confirmation snippet not found",
+)
+replace_once(
+    main_bundle,
+    "M=Jy({buildFlavor:i,allowDevtools:f,allowInspectElement:p,allowDebugMenu:m,errorReporter:h,globalState:j.globalState,getGlobalStateForHost:j.getGlobalStateForHost,desktopRoot:j.desktopRoot,preloadPath:j.preloadPath,repoRoot:j.repoRoot,isMacOS:w,isWindows:T,isDevMode:E,canHideLastLocalWindowToTray:()=>D,disposables:O})",
+    "te=Mg(),M=Jy({buildFlavor:i,allowDevtools:f,allowInspectElement:p,allowDebugMenu:m,errorReporter:h,globalState:j.globalState,getGlobalStateForHost:j.getGlobalStateForHost,desktopRoot:j.desktopRoot,preloadPath:j.preloadPath,repoRoot:j.repoRoot,isMacOS:w,isWindows:T,isDevMode:E,canHideLastLocalWindowToTray:()=>D,disposables:O,disableQuitConfirmationPrompt:process.env.CODEX_ELECTRON_DISABLE_QUIT_CONFIRMATION===`1`,quitState:te})",
+    error_message="Local desktop runtime patch failed: startup window services invocation snippet not found",
+)
+replace_once(
+    main_bundle,
+    "let te=Mg(),ne=()=>{te.allowQuitTemporarilyForUpdateInstall()};",
+    "let ne=()=>{te.allowQuitTemporarilyForUpdateInstall()};",
+    error_message="Local desktop runtime patch failed: duplicate quit-state declaration snippet not found",
+)
+replace_once(
+    main_bundle,
     "function dr(){return`Codex Desktop/${t.app.getVersion()} (${process.platform}; ${process.arch})`}",
     "function dr(){return`Local LLM Console/${t.app.getVersion()} (${process.platform}; ${process.arch})`}",
     error_message="Local desktop runtime patch failed: desktop user-agent title snippet not found",
@@ -297,8 +362,8 @@ replace_once(
 )
 replace_once(
     main_bundle,
-    "let o=t.app.getName();if(t.dialog.showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`],defaultId:0,cancelId:1,noLink:!0,title:`Quit ${o}?`,message:`Quit ${o}?`,detail:`Any local threads running on this machine will be interrupted and scheduled automations won't run`})!==0)",
-    "let o=`Local LLM Console`;if(t.dialog.showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`],defaultId:0,cancelId:1,noLink:!0,title:`Quit ${o}?`,message:``,detail:`Any local threads running on this machine will be interrupted and scheduled automations won't run`})!==0)",
+    "let o=t.app.getName();if(t.dialog.showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`],defaultId:0,cancelId:1,noLink:!0,title:`Quit ${o}?`,message:`Quit ${o}?`,detail:`Any local threads running on this machine will be interrupted and scheduled automations won't run`})!==0){a.preventDefault();return}",
+    "let E=`Local LLM Console`;if(t.dialog.showMessageBoxSync({type:`warning`,buttons:[`Quit`,`Cancel`],defaultId:0,cancelId:1,noLink:!0,title:`Quit ${E}?`,message:``,detail:`Any local threads running on this machine will be interrupted and scheduled automations won't run`})!==0){a.preventDefault(),Promise.resolve().then(()=>{m||(i.showLastActivePrimaryWindow()||o(`local`))});return}",
     error_message="Local desktop runtime patch failed: quit confirmation title snippet not found",
 )
 replace_once(
@@ -360,6 +425,12 @@ replace_once(
     "let a=i.kind===`local`?t.app.getName():i.display_name,o=await S.createPrimaryWindow({title:a,hostId:i.id,show:n});",
     "let a=i.kind===`local`?`Local LLM Console`:i.display_name,o=await S.createPrimaryWindow({title:a,hostId:i.id,show:n});",
     error_message="Local desktop runtime patch failed: primary window title selection snippet not found",
+)
+replace_once(
+    main_bundle,
+    "function bh(e){let t={id:e.id,display_name:e.displayName,kind:`ssh`,codex_cli_command:e.codexCliCommand,terminal_command:e.terminalCommand,default_workspaces:e.defaultWorkspaces??[],[zr]:{sshAlias:e.sshAlias??null,sshHost:e.sshHost,sshPort:e.sshPort,identity:e.identity,remotePort:e.remotePort??vh}};return e.localPort!=null&&(t.websocket_url=yh(e.localPort)),e.homeDir&&(t.home_dir=e.homeDir),t}function xh(t,n){let r=e.oi({sshAlias:t.sshAlias,sshHost:t.sshHost,sshPort:t.sshPort,identity:t.identity});return bh({id:t.hostId,displayName:`${gh}${t.displayName}`,localPort:n,sshAlias:t.sshAlias??null,sshHost:t.sshHost,sshPort:t.sshPort,identity:t.identity,remotePort:vh,codexCliCommand:[],terminalCommand:[`ssh`,...r],defaultWorkspaces:[]})}function Sh(t){return{id:t.hostId,display_name:t.displayName,kind:e.ri,codex_cli_command:[],terminal_command:[],default_workspaces:[],env_id:t.envId,environment_kind:t.environmentKind,online:t.online,busy:t.busy,os:t.os,arch:t.arch,app_server_version:t.appServerVersion,last_seen_at:t.lastSeenAt}}function Ch(t,n){return e.si(t)?Sh(t):xh(t,n)}",
+    "function bh(e){let t={id:e.id,display_name:e.displayName,kind:`ssh`,codex_cli_command:e.codexCliCommand,terminal_command:e.terminalCommand,default_workspaces:e.defaultWorkspaces??[],[zr]:{sshAlias:e.sshAlias??null,sshHost:e.sshHost,sshPort:e.sshPort,identity:e.identity,remotePort:e.remotePort??vh}};return e.localPort!=null&&(t.websocket_url=yh(e.localPort)),e.homeDir&&(t.home_dir=e.homeDir),t}function xh(t,n){let r=e.oi({sshAlias:t.sshAlias,sshHost:t.sshHost,sshPort:t.sshPort,identity:t.identity});return bh({id:t.hostId,displayName:`${gh}${t.displayName}`,localPort:n,sshAlias:t.sshAlias??null,sshHost:t.sshHost,sshPort:t.sshPort,identity:t.identity,remotePort:vh,codexCliCommand:[],terminalCommand:[`ssh`,...r],defaultWorkspaces:[]})}function Sh(t){return{id:t.hostId,display_name:t.displayName,kind:e.ri,codex_cli_command:[],terminal_command:[],default_workspaces:[],env_id:t.envId,environment_kind:t.environmentKind,online:t.online,busy:t.busy,os:t.os,arch:t.arch,app_server_version:t.appServerVersion,last_seen_at:t.lastSeenAt}}function Nh(t){let n=(t.websocketUrl??t.websocket_url??``).trim();return{id:t.hostId,display_name:t.displayName,kind:`brix`,codex_cli_command:[],terminal_command:[],default_workspaces:[],websocket_url:n}}function Ch(t,n){return e.si(t)?Sh(t):t.connectionType===`tailscale-websocket`&&(t.websocketUrl??t.websocket_url??``).trim().length>0?Nh(t):xh(t,n)}",
+    error_message="Local desktop runtime patch failed: remote websocket host conversion snippet not found",
 )
 replace_once(
     main_bundle,
@@ -440,14 +511,32 @@ replace_once(
     "Ne=()=>{a(!1),o(`/settings/general-settings`,{state:W})}",
     error_message="Local desktop runtime patch failed: extension settings action snippet not found",
 )
+replace_once(
+    runtime_index_bundle,
+    "(0,$.jsx)(lh.Item,{LeftIcon:xa,RightIcon:im,href:He,children:(0,$.jsx)(Y,{id:`composer.mode.remote.connectToCloud`,defaultMessage:`Connect Codex web`,description:`Menu item to connect Codex Cloud`})}),(0,$.jsx)(lh.Item,{LeftIcon:VI,className:`cursor-not-allowed`,disabled:!0,tooltipText:y.formatMessage({id:`composer.mode.remote.connectToCloudDisabledTooltip`,defaultMessage:`Set up an environment via Codex web to enable sending tasks to the cloud`,description:`Tooltip for disabled send to cloud item when Cloud is not connected`}),children:(0,$.jsx)(`span`,{className:`truncate`,children:(0,$.jsx)(Y,{id:`composer.mode.remote.sendToCloud`,defaultMessage:`Send to cloud`,description:`Disabled label when Codex Cloud is not connected`})})})",
+    "(0,$.jsx)(lh.Item,{LeftIcon:ih,disabled:typeof window!=`undefined`&&window.__isLocalLLMConsoleRemoteConnected?!window.__isLocalLLMConsoleRemoteConnected():!0,onClick:()=>{p(!1),_(!1),typeof window!=`undefined`&&window.__handleLocalLLMConsoleRemotePicker&&window.__handleLocalLLMConsoleRemotePicker()},tooltipText:typeof window!=`undefined`&&window.__isLocalLLMConsoleRemoteConnected&&!window.__isLocalLLMConsoleRemoteConnected()?y.formatMessage({id:`composer.mode.remote.workOnHostDisabledTooltip`,defaultMessage:`Connect to a remote host first.`,description:`Tooltip for disabled remote host entry in the composer mode dropdown`}):y.formatMessage({id:`composer.mode.remote.workOnHostTooltip`,defaultMessage:`Use the configured remote host for this session, or open Configuration if it is not set up yet.`,description:`Tooltip for the remote host entry in the composer mode dropdown`}),children:(0,$.jsx)(Y,{id:`composer.mode.remote.workOnHost`,defaultMessage:`Work on remote host`,description:`Menu item to use the configured remote host`})})",
+    error_message="Local desktop runtime patch failed: remote host composer menu snippet not found",
+)
+
+runtime_vscode_bundle = next((root / "webview" / "assets").glob("vscode-api-*.js"), None)
+if runtime_vscode_bundle is None:
+    raise SystemExit("Local desktop runtime patch failed: runtime vscode-api bundle not found")
+
+replace_once(
+    runtime_vscode_bundle,
+    "function Lf(e){let t=[`ssh`,...Af({sshAlias:e.sshAlias,sshHost:e.sshHost,sshPort:e.sshPort,identity:e.identity})];return{id:e.hostId,display_name:e.displayName,kind:`ssh`,codex_cli_command:[],terminal_command:t}}",
+    "function Lf(e){if(e.connectionType===`tailscale-websocket`&&(e.websocketUrl??e.websocket_url??``).trim().length>0)return{id:e.hostId,display_name:e.displayName,kind:`brix`,codex_cli_command:[],terminal_command:[],websocket_url:(e.websocketUrl??e.websocket_url??``).trim()};let t=[`ssh`,...Af({sshAlias:e.sshAlias,sshHost:e.sshHost,sshPort:e.sshPort,identity:e.identity})];return{id:e.hostId,display_name:e.displayName,kind:`ssh`,codex_cli_command:[],terminal_command:t}}",
+    error_message="Local desktop runtime patch failed: runtime renderer remote host conversion snippet not found",
+)
 
 runtime_webview_text = runtime_webview_index.read_text()
-runtime_settings_script_hash = "sha256-5k4JkxIm3KiM/KmfRx8pzEyLPiwx6uNO7fSyWH5bOsI="
+runtime_settings_script_hash = "sha256-E2isW5LIwE3Wbjd98bmFq8L3MGT0cyYcsqNRWufMnbA="
 runtime_bootstrap_script_tag = '    <script src="./assets/local-ai-console-bootstrap.js"></script>\n'
 runtime_settings_script = """    <script>
       (() => {
-        window.__openLocalSettings = () => {
-          const nextPath = `/settings/general-settings`;
+        window.__openLocalSettings = (section = `general-settings`) => {
+          const nextSection = typeof section === `string` && section.trim().length > 0 ? section.trim() : `general-settings`;
+          const nextPath = `/settings/${nextSection}`;
           if (window.location.pathname === nextPath) return;
           window.history.pushState({}, ``, nextPath);
           window.dispatchEvent(new PopStateEvent(`popstate`));
@@ -607,6 +696,9 @@ export CODEX_DESKTOP_WINDOW_ICON_PATH="$LOCAL_RUNTIME_ICON_PATH"
 export CODEX_DESKTOP_ELECTRON_APP_PATH="$LOCAL_RUNTIME_APP_DIR"
 export CODEX_ELECTRON_USER_DATA_PATH="${CODEX_ELECTRON_USER_DATA_PATH:-$LOCAL_USER_DATA_DIR}"
 terminate_stale_local_runtime_processes
+if [[ -x "$LOCAL_HOST_SERVICE_HELPER" ]]; then
+    "$LOCAL_HOST_SERVICE_HELPER" >/dev/null 2>&1 || true
+fi
 
 SOURCE_WEBVIEW_DIR="$LOCAL_WEBVIEW_SOURCE_DIR"
 export CODEX_DESKTOP_WEBVIEW_DIR="$LOCAL_WEBVIEW_DIR"
@@ -698,6 +790,58 @@ patch_text_file(
     ],
     error_message="Local desktop webview patch failed: expected index.html branding snippet not found",
 )
+
+runtime_settings_script_hash = "sha256-E2isW5LIwE3Wbjd98bmFq8L3MGT0cyYcsqNRWufMnbA="
+runtime_bootstrap_script_tag = '    <script src="./assets/local-ai-console-bootstrap.js"></script>\n'
+runtime_settings_script = """    <script>
+      (() => {
+        window.__openLocalSettings = (section = `general-settings`) => {
+          const nextSection = typeof section === `string` && section.trim().length > 0 ? section.trim() : `general-settings`;
+          const nextPath = `/settings/${nextSection}`;
+          if (window.location.pathname === nextPath) return;
+          window.history.pushState({}, ``, nextPath);
+          window.dispatchEvent(new PopStateEvent(`popstate`));
+        };
+      })();
+    </script>
+"""
+runtime_settings_csp_original = "script-src &#39;self&#39; &#39;sha256-Z2/iFzh9VMlVkEOar1f/oSHWwQk3ve1qk/C2WdsC4Xk=&#39; &#39;wasm-unsafe-eval&#39;"
+runtime_settings_csp_patched = f"script-src &#39;self&#39; &#39;sha256-Z2/iFzh9VMlVkEOar1f/oSHWwQk3ve1qk/C2WdsC4Xk=&#39; &#39;{runtime_settings_script_hash}&#39; &#39;wasm-unsafe-eval&#39;"
+
+index_html_text = index_html.read_text()
+legacy_settings_script_hash = "sha256-5k4JkxIm3KiM/KmfRx8pzEyLPiwx6uNO7fSyWH5bOsI="
+if runtime_settings_script_hash not in index_html_text:
+    if legacy_settings_script_hash in index_html_text:
+        index_html_text = index_html_text.replace(
+            legacy_settings_script_hash,
+            runtime_settings_script_hash,
+        )
+    elif runtime_settings_csp_original in index_html_text:
+        index_html_text = index_html_text.replace(
+            runtime_settings_csp_original,
+            runtime_settings_csp_patched,
+            1,
+        )
+    else:
+        raise SystemExit("Local desktop webview patch failed: settings CSP snippet not found")
+
+if "window.__openLocalSettings" not in index_html_text:
+    if runtime_bootstrap_script_tag in index_html_text:
+        index_html_text = index_html_text.replace(
+            runtime_bootstrap_script_tag,
+            f"{runtime_settings_script}{runtime_bootstrap_script_tag}",
+            1,
+        )
+    elif "</body>" in index_html_text:
+        index_html_text = index_html_text.replace(
+            "</body>",
+            f"{runtime_settings_script}</body>",
+            1,
+        )
+    else:
+        raise SystemExit("Local desktop webview patch failed: index.html body end snippet not found")
+
+index_html.write_text(index_html_text)
 
 settings_shared = next((target / "assets").glob("settings-shared-*.js"), None)
 if settings_shared is None:
@@ -975,6 +1119,10 @@ patch_text_file(
             "Ne=()=>{a(!1),o(`/settings/general-settings`,{state:W})}",
         ),
         (
+            "(0,$.jsx)(lh.Item,{LeftIcon:xa,RightIcon:im,href:He,children:(0,$.jsx)(Y,{id:`composer.mode.remote.connectToCloud`,defaultMessage:`Connect Codex web`,description:`Menu item to connect Codex Cloud`})}),(0,$.jsx)(lh.Item,{LeftIcon:VI,className:`cursor-not-allowed`,disabled:!0,tooltipText:y.formatMessage({id:`composer.mode.remote.connectToCloudDisabledTooltip`,defaultMessage:`Set up an environment via Codex web to enable sending tasks to the cloud`,description:`Tooltip for disabled send to cloud item when Cloud is not connected`}),children:(0,$.jsx)(`span`,{className:`truncate`,children:(0,$.jsx)(Y,{id:`composer.mode.remote.sendToCloud`,defaultMessage:`Send to cloud`,description:`Disabled label when Codex Cloud is not connected`})})})",
+            "(0,$.jsx)(lh.Item,{LeftIcon:ih,disabled:typeof window!=`undefined`&&window.__isLocalLLMConsoleRemoteConnected?!window.__isLocalLLMConsoleRemoteConnected():!0,onClick:()=>{p(!1),_(!1),typeof window!=`undefined`&&window.__handleLocalLLMConsoleRemotePicker&&window.__handleLocalLLMConsoleRemotePicker()},tooltipText:typeof window!=`undefined`&&window.__isLocalLLMConsoleRemoteConnected&&!window.__isLocalLLMConsoleRemoteConnected()?y.formatMessage({id:`composer.mode.remote.workOnHostDisabledTooltip`,defaultMessage:`Connect to a remote host first.`,description:`Tooltip for disabled remote host entry in the composer mode dropdown`}):y.formatMessage({id:`composer.mode.remote.workOnHostTooltip`,defaultMessage:`Use the configured remote host for this session, or open Configuration if it is not set up yet.`,description:`Tooltip for the remote host entry in the composer mode dropdown`}),children:(0,$.jsx)(Y,{id:`composer.mode.remote.workOnHost`,defaultMessage:`Work on remote host`,description:`Menu item to use the configured remote host`})})",
+        ),
+        (
             "defaultMessage:`Codex settings`",
             "defaultMessage:`Local LLM Console settings`",
         ),
@@ -1020,6 +1168,21 @@ patch_text_file(
         ),
     ],
     error_message="Local desktop webview patch failed: index branding snippet not found",
+)
+
+vscode_bundle = next((target / "assets").glob("vscode-api-*.js"), None)
+if vscode_bundle is None:
+    raise SystemExit("Local desktop webview patch failed: vscode-api bundle not found")
+
+patch_text_file(
+    vscode_bundle,
+    [
+        (
+            "function Lf(e){let t=[`ssh`,...Af({sshAlias:e.sshAlias,sshHost:e.sshHost,sshPort:e.sshPort,identity:e.identity})];return{id:e.hostId,display_name:e.displayName,kind:`ssh`,codex_cli_command:[],terminal_command:t}}",
+            "function Lf(e){if(e.connectionType===`tailscale-websocket`&&(e.websocketUrl??e.websocket_url??``).trim().length>0)return{id:e.hostId,display_name:e.displayName,kind:`brix`,codex_cli_command:[],terminal_command:[],websocket_url:(e.websocketUrl??e.websocket_url??``).trim()};let t=[`ssh`,...Af({sshAlias:e.sshAlias,sshHost:e.sshHost,sshPort:e.sshPort,identity:e.identity})];return{id:e.hostId,display_name:e.displayName,kind:`ssh`,codex_cli_command:[],terminal_command:t}}",
+        ),
+    ],
+    error_message="Local desktop webview patch failed: vscode remote host conversion snippet not found",
 )
 
 

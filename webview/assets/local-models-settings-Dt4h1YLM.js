@@ -2,53 +2,313 @@ import { s as e } from "./chunk-Bj-mKKzh.js";
 import { t as n } from "./react-BE0_fAZJ.js";
 import { t as r } from "./jsx-runtime-ebkFq_df.js";
 import { t as i } from "./clsx-DQfH8mAl.js";
-import { n as a, r as o, t as s } from "./settings-content-layout-DQIQ2vPn.js";
+import { t as s } from "./settings-content-layout-DQIQ2vPn.js";
 import { n as c } from "./settings-row-BG-yYlW7.js";
 import { n as l } from "./chevron-Oo-xHR0X.js";
 import { i as q, n as H, t as R } from "./check-md-YtZX6wSV.js";
 import { u as u, y as d } from "./config-queries-jUrDLWnn.js";
 import { t as G } from "./settings-shared-DkvLL00j.js";
 import { o as Y } from "./use-model-settings-ldiRRtPt.js";
+import { n as X } from "./send-app-server-request-BTldVjKF.js";
 
 var p = e(n(), 1),
   m = r(),
-  h = [
+  g = [
     { value: `ollama`, label: `Ollama` },
     { value: `lmstudio`, label: `LM Studio` },
   ],
-  g = [
+  j = [
+    { value: `off`, label: `Off` },
+    { value: `on`, label: `On` },
+  ],
+  A = [
     { value: `low`, label: `Low` },
     { value: `medium`, label: `Medium` },
     { value: `high`, label: `High` },
     { value: `xhigh`, label: `XHigh` },
   ],
-  _ = [`gpt-oss:120b`, `qwen3.5:9.7b`, `qwen3.5:122b`];
+  J = [
+    { value: `local`, label: `Work locally` },
+    { value: `remote`, label: `Connect to remote host` },
+  ],
+  P = [`gpt-oss:120b`, `qwen3.5:9.7b`, `qwen3.5:122b`],
+  $ = `codex-managed`,
+  ee = `tailscale-websocket`;
 
 function v(e, t = ``, n = ``) {
-  return typeof e == `string` && e.trim().length > 0 ? e : t || n;
+  return typeof e == `string` && e.trim().length > 0 ? e.trim() : t || n;
 }
 
-function y(e) {
+function b(e) {
+  return e === `remote` ? `remote` : `local`;
+}
+
+function N(e) {
+  return e === `tailscale` ? `tailscale` : `tailscale`;
+}
+
+function x(e) {
+  return e === !0 || e === `true` || e === `on` ? `on` : `off`;
+}
+
+function S(e, t = `443`) {
+  if (typeof e == `number` && Number.isInteger(e) && e > 0) return String(e);
+  if (typeof e == `string`) {
+    let n = e.trim();
+    if (/^[0-9]+$/.test(n) && Number.parseInt(n, 10) > 0) return n;
+  }
+  return t;
+}
+
+function C(e) {
   return {
+    launchMode: `local`,
     provider: v(e?.model_provider, v(e?.oss_provider, `ollama`)),
     model: v(e?.model, `gpt-oss:120b`),
     reasoning: v(e?.model_reasoning_effort, `medium`),
     catalogPath: v(e?.model_catalog_json, ``),
+    remoteTransport: N(e?.local_llm_console_remote_transport),
+    remoteUrl: v(e?.local_llm_console_remote_url, ``),
+    remoteAuthTokenEnv: v(e?.local_llm_console_remote_auth_token_env, ``),
+    hostMode: x(e?.local_llm_console_host_enabled),
+    hostTransport: N(e?.local_llm_console_host_transport),
+    hostListenUrl: v(
+      e?.local_llm_console_host_listen_url,
+      `ws://127.0.0.1:8765`,
+    ),
+    hostHttpsPort: S(e?.local_llm_console_host_https_port),
   };
 }
 
-function b(e) {
+function L(e) {
   return JSON.stringify(e);
 }
 
-function N(e) {
-  let t = _.map((e) => ({ value: e, label: e }));
-  return e != null && e.length > 0 && !_.includes(e)
+function T(e) {
+  let t = P.map((e) => ({ value: e, label: e }));
+  return e != null && e.length > 0 && !P.includes(e)
     ? [{ value: e, label: `${e} (current)` }, ...t]
     : t;
 }
 
-function x(e) {
+function readLocalLlmConsoleSessionState() {
+  if (
+    typeof window === `undefined` ||
+    typeof window.__getLocalLLMConsoleState !== `function`
+  )
+    return null;
+  return window.__getLocalLLMConsoleState();
+}
+
+async function refreshLocalLlmConsoleSessionState() {
+  if (
+    typeof window === `undefined` ||
+    typeof window.__refreshLocalLLMConsoleState !== `function`
+  )
+    return null;
+  return window.__refreshLocalLLMConsoleState();
+}
+
+async function switchLocalLlmConsoleSessionMode(e, t) {
+  if (
+    typeof window !== `undefined` &&
+    typeof window.__localLLMConsoleSwitchCurrentSession === `function`
+  )
+    return window.__localLLMConsoleSwitchCurrentSession(e, t);
+  if (
+    typeof window === `undefined` ||
+    typeof window.__switchLocalLLMConsoleMode !== `function`
+  )
+    throw new Error(`Local session controls are unavailable.`);
+  return window.__switchLocalLLMConsoleMode(e);
+}
+
+async function applyLocalLlmConsoleHostService(e = `reload`) {
+  let t = await fetch(`/__local-llm-console/host-service`, {
+      method: `POST`,
+      headers: { "Content-Type": `application/json` },
+      body: JSON.stringify({ action: e }),
+    }),
+    n = null;
+  try {
+    n = await t.json();
+  } catch {}
+  if (!t.ok)
+    throw new Error(
+      typeof (n == null ? void 0 : n.error) == `string` && n.error.trim().length > 0
+        ? n.error
+        : `Unable to apply host settings immediately.`,
+    );
+  return n;
+}
+
+function formatLocalLlmConsoleSessionLabel(e) {
+  return e === `remote` ? `Connected to remote host` : `Working locally`;
+}
+
+async function sendLocalLlmConsoleRequest(e, t) {
+  return X(e, t === void 0 ? void 0 : { params: t });
+}
+
+function normalizeRemoteSessionUrl(e) {
+  let t = v(e, ``);
+  if (t.length === 0) return ``;
+  let n;
+  try {
+    n = new URL(t);
+  } catch {
+    throw new Error(`Tailscale server URL is invalid.`);
+  }
+  if (n.protocol !== `ws:` && n.protocol !== `wss:`)
+    throw new Error(`Tailscale server URL must start with ws:// or wss://.`);
+  return n.toString();
+}
+
+function hasValidRemoteHostUrl(e) {
+  try {
+    let t = new URL(normalizeRemoteSessionUrl(e)).hostname.trim().toLowerCase();
+    return (
+      t.length > 0 &&
+      ![`yours.net`, `your-host.tailnet.ts.net`].includes(t)
+    );
+  } catch {
+    return !1;
+  }
+}
+
+function getRemoteSessionHostId(e) {
+  let t = normalizeRemoteSessionUrl(e);
+  return `local-llm-console-remote:${encodeURIComponent(t.toLowerCase())}`;
+}
+
+function getCurrentSessionHostId() {
+  if (typeof window === `undefined`) return ``;
+  try {
+    return v(new URL(window.location.href).searchParams.get(`hostId`), ``);
+  } catch {
+    return ``;
+  }
+}
+
+function isCurrentRemoteSessionConnected() {
+  if (
+    typeof window !== `undefined` &&
+    typeof window.__isLocalLLMConsoleRemoteConnected === `function`
+  )
+    return window.__isLocalLLMConsoleRemoteConnected() === !0;
+  return getCurrentSessionHostId().length > 0;
+}
+
+function buildRemoteSessionRecord(e) {
+  let t = normalizeRemoteSessionUrl(e),
+    n = new URL(t),
+    r = n.hostname.trim() || `remote-host`,
+    i = n.port.trim();
+  return {
+    hostId: getRemoteSessionHostId(t),
+    displayName: `Remote host`,
+    source: $,
+    autoConnect: !0,
+    sshAlias: null,
+    sshHost: r,
+    sshPort: i.length > 0 ? Number.parseInt(i, 10) : null,
+    identity: null,
+    connectionType: ee,
+    websocketUrl: t,
+  };
+}
+
+async function loadManagedRemoteSessionConnections() {
+  let e = await sendLocalLlmConsoleRequest(`refresh-remote-connections`);
+  return (e?.remoteConnections ?? []).filter((e) => e?.source === $);
+}
+
+function mergeManagedRemoteSessionConnections(e, t) {
+  return [...e.filter((e) => e.hostId !== t.hostId && e.connectionType !== ee), t];
+}
+
+function getCurrentSessionPath() {
+  if (typeof window === `undefined`) return `/`;
+  let e = window.location.pathname;
+  return e.startsWith(`/settings`) ? e : `/`;
+}
+
+function reloadCurrentSessionForHost(e) {
+  if (typeof window === `undefined`) return;
+  let t = new URL(window.location.href);
+  t.pathname = getCurrentSessionPath();
+  e ? t.searchParams.set(`hostId`, e) : t.searchParams.delete(`hostId`);
+  window.location.assign(t.toString());
+}
+
+async function switchLocalLlmConsoleCurrentSession(e, t = {}) {
+  let n = b(e);
+  if (n === `remote`) {
+    let e = buildRemoteSessionRecord(v(t.remoteUrl, readLocalLlmConsoleSessionState()?.remoteUrl, ``)),
+      n = mergeManagedRemoteSessionConnections(
+        await loadManagedRemoteSessionConnections(),
+        e,
+      ),
+      r = await sendLocalLlmConsoleRequest(
+        `save-codex-managed-remote-ssh-connections`,
+        {
+          remoteConnections: n,
+        },
+      );
+    r?.remoteConnections;
+    let i = await sendLocalLlmConsoleRequest(`set-remote-connection-auto-connect`, {
+      hostId: e.hostId,
+      autoConnect: !0,
+    });
+    if (typeof i?.errorMessage == `string` && i.errorMessage.trim().length > 0)
+      throw new Error(i.errorMessage.trim());
+    if (i?.state != null && i.state !== `connected`)
+      throw new Error(`Unable to connect to the remote host.`);
+    reloadCurrentSessionForHost(e.hostId);
+    return e;
+  }
+  let r = v(t.hostId, getCurrentSessionHostId(), ``);
+  if (r.length > 0) {
+    let e = await sendLocalLlmConsoleRequest(`set-remote-connection-auto-connect`, {
+      hostId: r,
+      autoConnect: !1,
+    });
+    if (
+      typeof e?.errorMessage == `string` &&
+      e.errorMessage.trim().length > 0 &&
+      e?.state !== `disconnected`
+    )
+      throw new Error(e.errorMessage.trim());
+  }
+  reloadCurrentSessionForHost(``);
+  return null;
+}
+
+if (typeof window !== `undefined`) {
+  window.__localLLMConsoleSwitchCurrentSession = switchLocalLlmConsoleCurrentSession;
+}
+
+function localSignature(e) {
+  return L({
+    provider: e.provider,
+    model: e.model,
+    reasoning: e.reasoning,
+    catalogPath: e.catalogPath,
+  });
+}
+
+function remoteSignature(e) {
+  return L({
+    launchMode: e.launchMode,
+    remoteUrl: e.remoteUrl,
+    remoteAuthTokenEnv: e.remoteAuthTokenEnv,
+    hostMode: e.hostMode,
+    hostListenUrl: e.hostListenUrl,
+    hostHttpsPort: e.hostHttpsPort,
+  });
+}
+
+function M(e) {
   let t =
     e.tone === `error`
       ? `border-token-error-foreground/20 bg-token-charts-red/10 text-token-error-foreground`
@@ -61,14 +321,14 @@ function x(e) {
   });
 }
 
-function S(e) {
+function k(e) {
   return (0, m.jsx)(`input`, {
     className: `w-full rounded-md border border-token-input-border bg-token-input-background px-2.5 py-1.5 text-sm text-token-input-foreground outline-none`,
     ...e,
   });
 }
 
-function C(e) {
+function F(e) {
   let {
       value: t,
       options: n,
@@ -114,267 +374,741 @@ function C(e) {
   });
 }
 
-function LocalModelsSettings(props = {}) {
-  let { embedded: M = !1 } = props,
+function tileStyle(e) {
+  let t = {
+    backgroundColor: `var(--color-background-panel, var(--color-token-bg-fog))`,
+  };
+  switch (e) {
+    case `top`:
+      return {
+        ...t,
+        borderTopLeftRadius: `0.5rem`,
+        borderTopRightRadius: `0.5rem`,
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
+      };
+    case `middle`:
+      return { ...t, borderRadius: 0, borderTopWidth: 0 };
+    case `bottom`:
+      return {
+        ...t,
+        borderTopLeftRadius: 0,
+        borderTopRightRadius: 0,
+        borderBottomLeftRadius: `0.5rem`,
+        borderBottomRightRadius: `0.5rem`,
+        borderTopWidth: 0,
+      };
+    default:
+      return { ...t, borderRadius: `0.5rem` };
+  }
+}
+
+function TileGroup(e) {
+  let { position: t = `single`, children: n } = e;
+  return (0, m.jsx)(`div`, {
+    className: `border-token-border flex flex-col divide-y-[0.5px] divide-token-border border`,
+    style: tileStyle(t),
+    children: n,
+  });
+}
+
+function RuntimeSettingsContent(props = {}) {
+  let { embedded: O = !1, section: ee = `local` } = props,
+    te = ee === `remote` ? `remote` : `local`,
+    ne = te === `remote`,
     { data: e, isLoading: n, refetch: r } = d(),
     i = u(),
-    t = (0, p.useMemo)(() => y(e?.config), [
+    t = (0, p.useMemo)(() => C(e?.config), [
+      e?.config?.local_llm_console_mode,
       e?.config?.model_provider,
       e?.config?.oss_provider,
       e?.config?.model,
       e?.config?.model_reasoning_effort,
       e?.config?.model_catalog_json,
+      e?.config?.local_llm_console_remote_transport,
+      e?.config?.local_llm_console_remote_url,
+      e?.config?.local_llm_console_remote_auth_token_env,
+      e?.config?.local_llm_console_host_enabled,
+      e?.config?.local_llm_console_host_transport,
+      e?.config?.local_llm_console_host_listen_url,
+      e?.config?.local_llm_console_host_https_port,
     ]),
-    [T, w] = (0, p.useState)(t),
-    [E, D] = (0, p.useState)(null),
-    O = e?.configWriteTarget?.filePath ?? ``,
-    k = e?.configWriteTarget?.expectedVersion ?? null,
-    j = (0, p.useMemo)(() => N(T.model), [T.model]),
-    A = b(t) !== b(T),
-    P =
-      T.provider.trim().length === 0 ||
-      T.model.trim().length === 0 ||
-      T.reasoning.trim().length === 0 ||
-      T.catalogPath.trim().length === 0,
-    L = n
-      ? (0, m.jsx)(`div`, {
-          className: `text-sm text-token-text-secondary`,
-          children: `Loading local model settings...`,
-        })
-      : (0, m.jsxs)(`div`, {
-          className: `flex flex-col`,
-          children: [
-            (0, m.jsxs)(`div`, {
-              className: `border-token-border flex flex-col divide-y-[0.5px] divide-token-border border`,
-              style: {
-                backgroundColor: `var(--color-background-panel, var(--color-token-bg-fog))`,
-                borderTopLeftRadius: `0.5rem`,
-                borderTopRightRadius: `0.5rem`,
-                borderBottomLeftRadius: 0,
-                borderBottomRightRadius: 0,
-              },
-              children: [
-                (0, m.jsx)(c, {
-                  label: `Local provider`,
-                  description: `Used for both model resolution and OSS requests in this profile.`,
-                  control: (0, m.jsx)(`div`, {
-                    className: `w-[28rem] max-w-full`,
-                    children: (0, m.jsx)(C, {
-                      ariaLabel: `Local provider`,
-                      options: h,
-                      value: T.provider,
-                      onChange: (e) => {
-                        w((t) => ({ ...t, provider: e }));
-                      },
-                    }),
-                  }),
-                }),
-                (0, m.jsx)(c, {
-                  label: `Default model`,
-                  description: `The model ID sent to your local provider when a conversation starts.`,
-                  control: (0, m.jsx)(`div`, {
-                    className: `w-[28rem] max-w-full`,
-                    children: (0, m.jsx)(C, {
-                      ariaLabel: `Default model`,
-                      options: j,
-                      value: T.model,
-                      onChange: (e) => {
-                        w((t) => ({ ...t, model: e }));
-                      },
-                    }),
-                  }),
-                }),
-                (0, m.jsx)(c, {
-                  label: `Reasoning effort`,
-                  description: `Default reasoning effort for local runs launched from this desktop profile.`,
-                  control: (0, m.jsx)(`div`, {
-                    className: `w-[28rem] max-w-full`,
-                    children: (0, m.jsx)(C, {
-                      ariaLabel: `Reasoning effort`,
-                      options: g,
-                      value: T.reasoning,
-                      onChange: (e) => {
-                        w((t) => ({ ...t, reasoning: e }));
-                      },
-                    }),
-                  }),
-                }),
-              ],
-            }),
-            (0, m.jsxs)(`div`, {
-              className: `border-token-border flex flex-col divide-y-[0.5px] divide-token-border border`,
-              style: {
-                backgroundColor: `var(--color-background-panel, var(--color-token-bg-fog))`,
-                borderRadius: 0,
-                borderTopWidth: 0,
-              },
-              children: [
-                (0, m.jsx)(c, {
-                  label: `Model catalog path`,
-                  description: `Path to the JSON catalog used by this profile for local model metadata.`,
-                  control: (0, m.jsx)(`div`, {
-                    className: `ml-5 w-[32rem] max-w-full`,
-                    children: (0, m.jsx)(S, {
-                      value: T.catalogPath,
-                      onChange: (e) => {
-                        let t = e.target.value;
-                        w((e) => ({ ...e, catalogPath: t }));
-                      },
-                      placeholder: `/home/you/.codex-local-desktop-models.json`,
-                    }),
-                  }),
-                }),
-                (0, m.jsx)(c, {
-                  label: `Active config file`,
-                  description:
-                    O.length > 0
-                      ? (0, m.jsx)(`span`, {
-                          className: `font-mono text-xs break-all`,
-                          children: O,
-                        })
-                      : `No writable config file was detected for this profile.`,
-                  control: (0, m.jsxs)(`div`, {
-                    className: `flex flex-wrap gap-2`,
-                    children: [
-                      (0, m.jsx)(l, {
-                        color: `ghost`,
-                        size: `toolbar`,
-                        className: `w-auto`,
-                        disabled: O.length === 0,
-                        onClick: async () => {
-                          if (O.length === 0) {
-                            D({
-                              tone: `error`,
-                              text: `No writable config file is available for this profile.`,
-                            });
-                            return;
-                          }
-                          try {
-                            await Y({
-                              path: O,
-                            });
-                          } catch {
-                            D({
-                              tone: `error`,
-                              text: `Unable to open config.toml.`,
-                            });
-                          }
-                        },
-                        children: `Open config.toml ↗`,
-                      }),
-                    ],
-                  }),
-                }),
-              ],
-            }),
-            (0, m.jsx)(`div`, {
-              className: `border-token-border flex flex-col divide-y-[0.5px] divide-token-border border`,
-              style: {
-                backgroundColor: `var(--color-background-panel, var(--color-token-bg-fog))`,
-                borderTopLeftRadius: 0,
-                borderTopRightRadius: 0,
-                borderBottomLeftRadius: `0.5rem`,
-                borderBottomRightRadius: `0.5rem`,
-                borderTopWidth: 0,
-              },
-              children: (0, m.jsxs)(`div`, {
-                className: `flex flex-col gap-3 px-4 py-3`,
-                children: [
-                  (0, m.jsxs)(`div`, {
-                    className: `flex flex-wrap gap-2`,
-                    children: [
-                      (0, m.jsx)(l, {
-                        color: `primary`,
-                        size: `toolbar`,
-                        className: `w-auto`,
-                        disabled: !A || P || i.isPending,
-                        onClick: async () => {
-                          let e = T.provider.trim(),
-                            n = T.model.trim(),
-                            a = T.reasoning.trim(),
-                            o = T.catalogPath.trim();
-                          if (
-                            e.length === 0 ||
-                            n.length === 0 ||
-                            a.length === 0 ||
-                            o.length === 0
-                          ) {
-                            D({
-                              tone: `error`,
-                              text: `Provider, model, reasoning effort, and catalog path are all required.`,
-                            });
-                            return;
-                          }
-                          D({
-                            tone: `info`,
-                            text: `Saving local model settings...`,
-                          });
-                          try {
-                            await i.mutateAsync({
-                              filePath: O || null,
-                              expectedVersion: k,
-                              edits: [
-                                { keyPath: `model_provider`, value: e },
-                                { keyPath: `oss_provider`, value: e },
-                                { keyPath: `model`, value: n },
-                                { keyPath: `model_reasoning_effort`, value: a },
-                                { keyPath: `model_catalog_json`, value: o },
-                              ],
-                            }),
-                              await r(),
-                              D({
-                                tone: `success`,
-                                text: `Saved local model settings.`,
-                              });
-                          } catch {
-                            D({
-                              tone: `error`,
-                              text: `Unable to save local model settings.`,
-                            });
-                          }
-                        },
-                        children: i.isPending ? `Saving...` : `Save changes`,
-                      }),
-                      (0, m.jsx)(l, {
-                        color: `secondary`,
-                        size: `toolbar`,
-                        className: `w-auto`,
-                        disabled: !A || i.isPending,
-                        onClick: () => {
-                          w(t),
-                            D({
-                              tone: `info`,
-                              text: `Reverted unsaved changes.`,
-                            });
-                        },
-                        children: `Reset`,
-                      }),
-                    ],
-                  }),
-                  P
-                    ? (0, m.jsx)(x, {
-                        tone: `error`,
-                        text: `Provider, model, reasoning effort, and catalog path are all required before saving.`,
-                      })
-                    : null,
-                  E != null ? (0, m.jsx)(x, { tone: E.tone, text: E.text }) : null,
-                ],
-              }),
-            }),
+    [w, E] = (0, p.useState)(t),
+    [D, U] = (0, p.useState)(null),
+    [re, ie] = (0, p.useState)(() => {
+      let e = readLocalLlmConsoleSessionState();
+      return {
+        currentMode: b(e?.currentMode ?? t.launchMode),
+        hasRemoteSettings: Boolean(e?.hasRemoteSettings) || t.remoteUrl.trim().length > 0,
+        remoteUrl: v(e?.remoteUrl, t.remoteUrl),
+      };
+    }),
+    [connectionChoice, setConnectionChoice] = (0, p.useState)(() =>
+      b(readLocalLlmConsoleSessionState()?.currentMode ?? t.launchMode),
+    ),
+    [ae, oe] = (0, p.useState)(null),
+    se = e?.configWriteTarget?.filePath ?? ``,
+    ce = e?.configWriteTarget?.expectedVersion ?? null,
+    le = (0, p.useMemo)(() => T(w.model), [w.model]),
+    ue = localSignature(t) !== localSignature(w),
+    de = remoteSignature(t) !== remoteSignature(w),
+    fe = ne ? de : ue,
+    pe =
+      w.provider.trim().length === 0 ||
+      w.model.trim().length === 0 ||
+      w.reasoning.trim().length === 0 ||
+      w.catalogPath.trim().length === 0,
+    me = !hasValidRemoteHostUrl(w.remoteUrl),
+    he =
+      w.hostListenUrl.trim().length === 0 ||
+      !/^[0-9]+$/.test(w.hostHttpsPort.trim()) ||
+      Number.parseInt(w.hostHttpsPort.trim(), 10) <= 0,
+    _e = b(ae ?? re.currentMode ?? t.launchMode),
+    qe = isCurrentRemoteSessionConnected(),
+    ve = Boolean(re.hasRemoteSettings) || hasValidRemoteHostUrl(w.remoteUrl),
+    be = ne
+      ? (_e === `remote` && me) || (w.hostMode === `on` && he)
+      : pe,
+    xe = async (e, n = {}) => {
+      let z = n.scope === `remote`,
+        a = w.provider.trim(),
+        o = w.model.trim(),
+        s = w.reasoning.trim(),
+        c = w.catalogPath.trim(),
+        l = `tailscale`,
+        q = w.remoteUrl.trim(),
+        H = w.remoteAuthTokenEnv.trim(),
+        R = w.hostMode === `on`,
+        G = `tailscale`,
+        Y = w.hostListenUrl.trim(),
+        V = w.hostHttpsPort.trim(),
+        I = Number.parseInt(V, 10);
+      if (
+        !z &&
+        (a.length === 0 ||
+          o.length === 0 ||
+          s.length === 0 ||
+          c.length === 0)
+      ) {
+        U({
+          tone: `error`,
+          text: `Provider, model, reasoning effort, and catalog path are all required for local settings.`,
+        });
+        return !1;
+      }
+      if (z && e === `remote` && !hasValidRemoteHostUrl(q)) {
+        U({
+          tone: `error`,
+          text: `Please enter a valid remote host.`,
+        });
+        return !1;
+      }
+      if (
+        z &&
+        R &&
+        (Y.length === 0 ||
+          !/^[0-9]+$/.test(V) ||
+          !Number.isInteger(I) ||
+          I <= 0)
+      ) {
+        U({
+          tone: `error`,
+          text: `Host mode requires a listen URL and a valid Tailscale HTTPS port.`,
+        });
+        return !1;
+      }
+      U({
+        tone: `info`,
+        text: n.savingText ?? `Saving runtime configuration...`,
+      });
+      try {
+        await i.mutateAsync({
+          filePath: se || null,
+          expectedVersion: ce,
+          edits: [
+            { keyPath: `model_provider`, value: a },
+            { keyPath: `oss_provider`, value: a },
+            { keyPath: `model`, value: o },
+            { keyPath: `model_reasoning_effort`, value: s },
+            { keyPath: `model_catalog_json`, value: c },
+            { keyPath: `local_llm_console_mode`, value: `local` },
+            {
+              keyPath: `local_llm_console_remote_transport`,
+              value: l,
+            },
+            { keyPath: `local_llm_console_remote_url`, value: q },
+            {
+              keyPath: `local_llm_console_remote_auth_token_env`,
+              value: H,
+            },
+            {
+              keyPath: `local_llm_console_host_enabled`,
+              value: R,
+            },
+            {
+              keyPath: `local_llm_console_host_transport`,
+              value: G,
+            },
+            {
+              keyPath: `local_llm_console_host_listen_url`,
+              value: Y,
+            },
+            {
+              keyPath: `local_llm_console_host_https_port`,
+              value: I,
+            },
           ],
         });
+        await r();
+        E((t) => ({ ...t, launchMode: `local` }));
+        ie({
+          currentMode: z ? _e : b(e),
+          hasRemoteSettings: q.length > 0,
+          remoteUrl: q,
+        });
+        if (z)
+          try {
+            await applyLocalLlmConsoleHostService(`reload`);
+          } catch (e) {
+            U({
+              tone: `error`,
+              text:
+                e instanceof Error && e.message.trim().length > 0
+                  ? `Saved remote settings, but ${e.message}`
+                  : `Saved remote settings, but unable to apply host settings immediately.`,
+            });
+            return !0;
+          }
+        U({
+          tone: `success`,
+          text: n.successText ?? (z ? `Saved remote settings.` : `Saved runtime configuration.`),
+        });
+        return !0;
+      } catch {
+        U({
+          tone: `error`,
+          text: n.errorText ?? `Unable to save runtime configuration.`,
+        });
+        return !1;
+      }
+    },
+    Se = async (e) => {
+      if (e === _e) return;
+      oe(e);
+      let t = await xe(e, {
+        scope: `remote`,
+        savingText:
+          e === `remote`
+            ? `Saving remote host settings...`
+            : `Saving local runtime settings...`,
+        successText:
+          e === `remote`
+            ? `Connecting to remote host...`
+            : `Switching back to local mode...`,
+      });
+      if (!t) {
+        oe(null);
+        return;
+      }
+      try {
+        await switchLocalLlmConsoleSessionMode(e, {
+          remoteUrl: w.remoteUrl,
+          hostId: getCurrentSessionHostId(),
+        });
+      } catch (t) {
+        oe(null);
+        U({
+          tone: `error`,
+          text:
+            t instanceof Error && t.message.trim().length > 0
+              ? t.message
+              : `Unable to switch the current session.`,
+        });
+      }
+    },
+    Ce = () => {
+      E((e) => ({
+        ...e,
+        provider: t.provider,
+        model: t.model,
+        reasoning: t.reasoning,
+        catalogPath: t.catalogPath,
+      }));
+      oe(null);
+      U({
+        tone: `info`,
+        text: `Reverted unsaved local changes.`,
+      });
+    },
+    Le = () => {
+      E((e) => ({
+        ...e,
+        launchMode: t.launchMode,
+        remoteUrl: t.remoteUrl,
+        remoteAuthTokenEnv: t.remoteAuthTokenEnv,
+        hostMode: t.hostMode,
+        hostListenUrl: t.hostListenUrl,
+        hostHttpsPort: t.hostHttpsPort,
+      }));
+      oe(null);
+      U({
+        tone: `info`,
+        text: `Reverted unsaved remote changes.`,
+      });
+    },
+    Te = () =>
+      (0, m.jsx)(c, {
+        label: `Active config file`,
+        description:
+          se.length > 0
+            ? (0, m.jsx)(`span`, {
+                className: `font-mono text-xs break-all`,
+                children: se,
+              })
+            : `No writable config file was detected for this profile.`,
+        control: (0, m.jsx)(`div`, {
+          className: `flex flex-wrap gap-2`,
+          children: (0, m.jsx)(l, {
+            color: `ghost`,
+            size: `toolbar`,
+            className: `w-auto`,
+            disabled: se.length === 0,
+            onClick: async () => {
+              if (se.length === 0) {
+                U({
+                  tone: `error`,
+                  text: `No writable config file is available for this profile.`,
+                });
+                return;
+              }
+              try {
+                await Y({
+                  path: se,
+                });
+              } catch {
+                U({
+                  tone: `error`,
+                  text: `Unable to open config.toml.`,
+                });
+              }
+            },
+            children: `Open config.toml ↗`,
+          }),
+        }),
+      }),
+    Oe = n
+      ? (0, m.jsx)(`div`, {
+          className: `text-sm text-token-text-secondary`,
+          children: ne
+            ? `Loading remote settings...`
+            : `Loading local runtime settings...`,
+        })
+      : ne
+        ? (0, m.jsxs)(`div`, {
+            className: `flex flex-col`,
+            children: [
+              (0, m.jsxs)(TileGroup, {
+                position: `top`,
+                children: [
+                  (0, m.jsx)(c, {
+                    label: `Current connection`,
+                    description: `Switch this session between local and remote.`,
+                    control: (0, m.jsx)(`div`, {
+                      className: `flex w-[32rem] max-w-full items-center gap-2`,
+                      children: (0, m.jsxs)(m.Fragment, {
+                        children: [
+                          (0, m.jsx)(`div`, {
+                            className: `w-[28rem] max-w-full`,
+                            children: (0, m.jsx)(F, {
+                              ariaLabel: `Current connection`,
+                              options: J,
+                              value: connectionChoice,
+                              onChange: (e) => {
+                                setConnectionChoice(b(e));
+                              },
+                              disabled: i.isPending || ae !== null,
+                            }),
+                          }),
+                          (0, m.jsx)(l, {
+                            color: `secondary`,
+                            size: `toolbar`,
+                            className: `w-auto`,
+                            disabled:
+                              i.isPending ||
+                              ae !== null ||
+                              connectionChoice === _e ||
+                              (connectionChoice === `remote` && !ve),
+                            onClick: async () => {
+                              await Se(connectionChoice);
+                            },
+                            children: ae !== null ? `Connecting...` : `Connect`,
+                          }),
+                        ],
+                      }),
+                    }),
+                  }),
+                  (0, m.jsxs)(`div`, {
+                    className: `flex flex-col gap-2 px-4 py-3`,
+                    children: [
+                      (0, m.jsx)(`div`, {
+                        className: `text-sm text-token-text-primary`,
+                        children: `Tailscale server URL`,
+                      }),
+                      (0, m.jsx)(`div`, {
+                        className: `text-sm text-token-text-secondary`,
+                        children: `Use the tailnet URL that proxies your remote app-server.`,
+                      }),
+                      (0, m.jsx)(`div`, {
+                        className: `w-full max-w-[56rem]`,
+                        children: (0, m.jsx)(k, {
+                          value: w.remoteUrl,
+                          disabled: i.isPending || ae !== null || connectionChoice === `local`,
+                          onChange: (e) => {
+                            let t = e.target.value;
+                            E((e) => ({ ...e, remoteUrl: t }));
+                          },
+                          placeholder: `wss://your-host.tailnet.ts.net`,
+                        }),
+                      }),
+                      connectionChoice === `remote` &&
+                      D?.tone === `error` &&
+                      D?.text === `Please enter a valid remote host.` &&
+                      w.remoteUrl.trim().length > 0 &&
+                      !hasValidRemoteHostUrl(w.remoteUrl)
+                        ? (0, m.jsx)(M, {
+                            tone: `error`,
+                            text: `Please enter a valid remote host.`,
+                          })
+                        : null,
+                    ],
+                  }),
+                  (0, m.jsxs)(`div`, {
+                    className: `flex flex-col gap-2 px-4 py-3`,
+                    children: [
+                      (0, m.jsx)(`div`, {
+                        className: `text-sm text-token-text-primary`,
+                        children: `Remote auth token env var`,
+                      }),
+                      (0, m.jsx)(`div`, {
+                        className: `text-sm text-token-text-secondary`,
+                        children: `Optional. If set, the launcher forwards --remote-auth-token-env when connecting to the remote host.`,
+                      }),
+                      (0, m.jsx)(`div`, {
+                        className: `w-full max-w-[56rem]`,
+                        children: (0, m.jsx)(k, {
+                          value: w.remoteAuthTokenEnv,
+                          disabled: i.isPending || ae !== null || connectionChoice === `local`,
+                          onChange: (e) => {
+                            let t = e.target.value;
+                            E((e) => ({ ...e, remoteAuthTokenEnv: t }));
+                          },
+                          placeholder: `LOCAL_LLM_CONSOLE_REMOTE_TOKEN`,
+                        }),
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+              (0, m.jsxs)(TileGroup, {
+                position: `middle`,
+                children: [
+                  (0, m.jsx)(c, {
+                    label: `Host remote sessions`,
+                    description: `Start a local server on this machine so another Local LLM Console can connect to it.`,
+                    control: (0, m.jsx)(`div`, {
+                      className: `w-[28rem] max-w-full`,
+                      children: (0, m.jsx)(F, {
+                        ariaLabel: `Host remote sessions`,
+                        options: j,
+                        value: w.hostMode,
+                        disabled: i.isPending || ae !== null,
+                        onChange: (e) => {
+                          E((t) => ({ ...t, hostMode: e }));
+                        },
+                      }),
+                    }),
+                  }),
+                  (0, m.jsxs)(`div`, {
+                    className: `flex flex-col gap-2 px-4 py-3`,
+                    children: [
+                      (0, m.jsx)(`div`, {
+                        className: `text-sm text-token-text-primary`,
+                        children: `Host listen URL`,
+                      }),
+                      (0, m.jsx)(`div`, {
+                        className: `text-sm text-token-text-secondary`,
+                        children: `The local server endpoint to start when host mode is enabled.`,
+                      }),
+                      (0, m.jsx)(`div`, {
+                        className: `w-full max-w-[56rem]`,
+                        children: (0, m.jsx)(k, {
+                          value: w.hostListenUrl,
+                          disabled: i.isPending || ae !== null,
+                          onChange: (e) => {
+                            let t = e.target.value;
+                            E((e) => ({ ...e, hostListenUrl: t }));
+                          },
+                          placeholder: `ws://127.0.0.1:8765`,
+                        }),
+                      }),
+                    ],
+                  }),
+                  (0, m.jsx)(c, {
+                    label: `Tailscale HTTPS port`,
+                    description: `Port used by tailscale serve when publishing the local app-server inside your tailnet.`,
+                    control: (0, m.jsx)(`div`, {
+                      className: `w-[12rem] max-w-full`,
+                      children: (0, m.jsx)(k, {
+                        value: w.hostHttpsPort,
+                        disabled: i.isPending || ae !== null,
+                        onChange: (e) => {
+                          let t = e.target.value;
+                          E((e) => ({ ...e, hostHttpsPort: t }));
+                        },
+                        placeholder: `443`,
+                      }),
+                    }),
+                  }),
+                ],
+              }),
+              (0, m.jsx)(TileGroup, {
+                position: `middle`,
+                children: (0, m.jsx)(Te, {}),
+              }),
+              (0, m.jsx)(TileGroup, {
+                position: `bottom`,
+                children: (0, m.jsxs)(`div`, {
+                  className: `flex flex-col gap-3 px-4 py-3`,
+                  children: [
+                    (0, m.jsxs)(`div`, {
+                      className: `flex flex-wrap gap-2`,
+                      children: [
+                        (0, m.jsx)(l, {
+                          color: `primary`,
+                          size: `toolbar`,
+                          className: `w-auto`,
+                          disabled: !fe || be || i.isPending || ae !== null,
+                          onClick: async () => {
+                            await xe(w.launchMode, { scope: `remote` });
+                          },
+                          children: i.isPending ? `Saving...` : `Save changes`,
+                        }),
+                        (0, m.jsx)(l, {
+                          color: `secondary`,
+                          size: `toolbar`,
+                          className: `w-auto`,
+                          disabled: !fe || i.isPending,
+                          onClick: Le,
+                          children: `Reset`,
+                        }),
+                      ],
+                    }),
+                    qe && hasValidRemoteHostUrl(w.remoteUrl)
+                      ? (0, m.jsx)(M, {
+                          tone: `info`,
+                          text: `This session is currently using the configured remote host.`,
+                        })
+                      : null,
+                    w.hostMode === `on` && he
+                      ? (0, m.jsx)(M, {
+                          tone: `error`,
+                          text: `Host mode requires a listen URL and a valid Tailscale HTTPS port before saving.`,
+                        })
+                      : null,
+                    D != null ? (0, m.jsx)(M, { tone: D.tone, text: D.text }) : null,
+                  ],
+                }),
+              }),
+            ],
+          })
+        : (0, m.jsxs)(`div`, {
+            className: `flex flex-col`,
+            children: [
+              (0, m.jsxs)(TileGroup, {
+                position: `top`,
+                children: [
+                  (0, m.jsx)(c, {
+                    label: `Local provider`,
+                    description: `Used when this profile runs locally or hosts remote sessions from this machine.`,
+                    control: (0, m.jsx)(`div`, {
+                      className: `w-[28rem] max-w-full`,
+                      children: (0, m.jsx)(F, {
+                        ariaLabel: `Local provider`,
+                        options: g,
+                        value: w.provider,
+                        onChange: (e) => {
+                          E((t) => ({ ...t, provider: e }));
+                        },
+                      }),
+                    }),
+                  }),
+                  (0, m.jsx)(c, {
+                    label: `Default model`,
+                    description: `The model ID used when this profile runs locally.`,
+                    control: (0, m.jsx)(`div`, {
+                      className: `w-[28rem] max-w-full`,
+                      children: (0, m.jsx)(F, {
+                        ariaLabel: `Default model`,
+                        options: le,
+                        value: w.model,
+                        onChange: (e) => {
+                          E((t) => ({ ...t, model: e }));
+                        },
+                      }),
+                    }),
+                  }),
+                  (0, m.jsx)(c, {
+                    label: `Reasoning effort`,
+                    description: `Default reasoning effort for local runs launched from this desktop profile.`,
+                    control: (0, m.jsx)(`div`, {
+                      className: `w-[28rem] max-w-full`,
+                      children: (0, m.jsx)(F, {
+                        ariaLabel: `Reasoning effort`,
+                        options: A,
+                        value: w.reasoning,
+                        onChange: (e) => {
+                          E((t) => ({ ...t, reasoning: e }));
+                        },
+                      }),
+                    }),
+                  }),
+                ],
+              }),
+              (0, m.jsxs)(TileGroup, {
+                position: `middle`,
+                children: [
+                  (0, m.jsx)(c, {
+                    label: `Model catalog path`,
+                    description: `Path to the JSON catalog used when this profile runs locally.`,
+                    control: (0, m.jsx)(`div`, {
+                      className: `ml-5 w-[32rem] max-w-full`,
+                      children: (0, m.jsx)(k, {
+                        value: w.catalogPath,
+                        onChange: (e) => {
+                          let t = e.target.value;
+                          E((e) => ({ ...e, catalogPath: t }));
+                        },
+                        placeholder: `/home/you/.codex-local-desktop-models.json`,
+                      }),
+                    }),
+                  }),
+                  (0, m.jsx)(Te, {}),
+                ],
+              }),
+              (0, m.jsx)(TileGroup, {
+                position: `bottom`,
+                children: (0, m.jsxs)(`div`, {
+                  className: `flex flex-col gap-3 px-4 py-3`,
+                  children: [
+                    (0, m.jsxs)(`div`, {
+                      className: `flex flex-wrap gap-2`,
+                      children: [
+                        (0, m.jsx)(l, {
+                          color: `primary`,
+                          size: `toolbar`,
+                          className: `w-auto`,
+                          disabled: !fe || be || i.isPending || ae !== null,
+                          onClick: async () => {
+                            await xe(w.launchMode, { scope: `local` });
+                          },
+                          children: i.isPending ? `Saving...` : `Save changes`,
+                        }),
+                        (0, m.jsx)(l, {
+                          color: `secondary`,
+                          size: `toolbar`,
+                          className: `w-auto`,
+                          disabled: !fe || i.isPending,
+                          onClick: Ce,
+                          children: `Reset`,
+                        }),
+                      ],
+                    }),
+                    qe
+                      ? (0, m.jsx)(M, {
+                          tone: `info`,
+                          text: `This session is currently connected to a remote host. Local model changes will apply when you switch back to local work.`,
+                        })
+                      : null,
+                    be
+                      ? (0, m.jsx)(M, {
+                          tone: `error`,
+                          text: `Provider, model, reasoning effort, and catalog path are all required before saving local settings.`,
+                        })
+                      : null,
+                    D != null ? (0, m.jsx)(M, { tone: D.tone, text: D.text }) : null,
+                  ],
+                }),
+              }),
+            ],
+          });
 
   (0, p.useEffect)(() => {
-    w(t), D(null);
-  }, [b(t)]);
+    if ((D == null ? void 0 : D.tone) !== `success`) return;
+    let e = window.setTimeout(() => {
+      U((e) => (e != null && e.tone === `success` ? null : e));
+    }, 3000);
+    return () => {
+      window.clearTimeout(e);
+    };
+  }, [D]);
 
-  return M
-    ? L
-    : (0, m.jsx)(s, {
-        title: `Local Models`,
-        subtitle: `Configure the local model provider, default model, and model catalog for this desktop profile.`,
-        children: L,
-      });
+  (0, p.useEffect)(() => {
+    let e = !1,
+      t = (t) => {
+        if (e || !(t && typeof t == `object`)) return;
+        ie({
+          currentMode: b(t.currentMode),
+          hasRemoteSettings: Boolean(t.hasRemoteSettings),
+          remoteUrl: v(t.remoteUrl, ``),
+        });
+      };
+    t(readLocalLlmConsoleSessionState());
+    refreshLocalLlmConsoleSessionState().then(t).catch(() => {});
+    if (typeof window !== `undefined`) {
+      let n = (e) => {
+        t(e.detail);
+      };
+      return (
+        window.addEventListener(`local-llm-console-state`, n),
+        () => {
+          e = !0;
+          window.removeEventListener(`local-llm-console-state`, n);
+        }
+      );
+    }
+    return () => {
+      e = !0;
+    };
+  }, []);
+
+  (0, p.useEffect)(() => {
+    ae === null && setConnectionChoice(_e);
+  }, [_e, ae]);
+
+  (0, p.useEffect)(() => {
+    E(t);
+    U(null);
+    oe(null);
+  }, [L(t)]);
+
+  if (O) return Oe;
+  return (0, m.jsx)(s, {
+    title: ne ? `Remote settings` : `Runtime`,
+    subtitle: ne
+      ? `Configure how this desktop profile connects to and hosts remote sessions over Tailscale.`
+      : `Configure how this desktop profile runs local models.`,
+    children: Oe,
+  });
 }
 
-export { LocalModelsSettings };
+function LocalModelsSettings(props = {}) {
+  let { section: e, embedded: t = !1 } = props;
+  e = e ?? (t ? `local` : `remote`);
+  return (0, m.jsx)(RuntimeSettingsContent, { embedded: t, section: e });
+}
+
+function RemoteSettingsPage() {
+  return (0, m.jsx)(RuntimeSettingsContent, { section: `remote` });
+}
+
+export { LocalModelsSettings, RemoteSettingsPage };

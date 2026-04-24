@@ -1,7 +1,46 @@
 #!/bin/bash
 set -euo pipefail
 
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex-local-desktop}"
+CONFIG_PATH="${CODEX_HOME}/config.toml"
+
+mapfile -t LOCAL_LLM_CONSOLE_CONFIG < <(
+  python3 - "$CONFIG_PATH" <<'PY'
+from pathlib import Path
+import sys
+import tomllib
+
+path = Path(sys.argv[1])
+config = {}
+if path.is_file():
+    with path.open("rb") as handle:
+        config = tomllib.load(handle)
+
+
+def clean_string(value, default=""):
+    if not isinstance(value, str):
+        return default
+    value = value.strip()
+    return value or default
+
+
+def clean_identifier(value, default):
+    value = clean_string(value, default)
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-")
+    return value if value and set(value) <= allowed else default
+
+provider = clean_identifier(
+    config.get("model_provider") or config.get("oss_provider"),
+    "ollama",
+)
+print(provider)
+PY
+)
+
+LOCAL_PROVIDER="${LOCAL_LLM_CONSOLE_CONFIG[0]:-ollama}"
+
 exec /usr/local/bin/codex \
   --disable plugins \
-  -c 'model_provider="ollama"' \
+  -c "model_provider=\"$LOCAL_PROVIDER\"" \
+  -c "oss_provider=\"$LOCAL_PROVIDER\"" \
   "$@"

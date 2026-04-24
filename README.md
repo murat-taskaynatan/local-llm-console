@@ -1,6 +1,6 @@
 # Local LLM Console
 
-Local LLM Console is a standalone Linux desktop app for local LLMs with a Codex Desktop like UI and a self-bootstrapping install flow.
+Local LLM Console is a standalone Linux desktop app for local LLMs with a Codex Desktop like UI, Tailscale-based remote host support, and a self-bootstrapping install flow.
 
 This repository includes the Local LLM Console launchers, patched webview, desktop integration files, icon assets, an X11 title fix, a local model catalog, and the scripts needed to generate `codex-app/` locally from upstream assets.
 
@@ -9,6 +9,7 @@ This repository includes the Local LLM Console launchers, patched webview, deskt
 - A Codex Desktop app fork layer for local models
 - A portable copy of the Local LLM Console launchers and UI patches
 - A local-model catalog and desktop launcher/icon bundle
+- A remote-host workflow for connecting one Local LLM Console session to another over Tailscale
 - A self-bootstrapping installer that generates the Linux app locally
 
 ## What This Repo Is Not
@@ -25,6 +26,10 @@ This repository includes the Local LLM Console launchers, patched webview, deskt
   Local Codex CLI wrapper configured for Ollama
 - `launcher/local-ai-console-launch`
   User-facing launcher entry point
+- `launcher/local-ai-console-host-service`
+  Helper that starts and reloads the local host-side remote session service
+- `launcher/local-ai-console-webview-server.py`
+  Local control server that serves the patched webview and session state endpoints
 - `desktop/local-ai-console.desktop`
   Desktop entry template
 - `assets/local-ai-console-gradient.png`
@@ -90,6 +95,32 @@ The generated app uses the local CLI wrapper for Ollama:
 ```bash
 codex --disable plugins -c 'model_provider="ollama"'
 ```
+
+## Remote Host Sessions
+
+Local LLM Console can host and connect to remote sessions over Tailscale.
+
+Host machine flow:
+
+1. Open `Settings` -> `Remote settings`.
+2. Turn on `Host remote sessions`.
+3. Keep or adjust the local listen URL and Tailscale HTTPS port.
+4. Save changes.
+
+Client machine flow:
+
+1. Open `Settings` -> `Remote settings`.
+2. Enter the remote machine's Tailscale `wss://...` URL.
+3. Save changes.
+4. Use `Current connection` -> `Connect to remote host`, or switch from the chat picker.
+
+Remote settings UI:
+
+![Remote settings](pictures/remote-settings.png)
+
+Chat picker remote-host action:
+
+![Chat picker remote host](pictures/chat-picker-remote.png)
 
 ## Notes
 
