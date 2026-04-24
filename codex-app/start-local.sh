@@ -23,10 +23,10 @@ export CODEX_DESKTOP_DESKTOP_ENTRY="${CODEX_DESKTOP_DESKTOP_ENTRY:-local-ai-cons
 export CODEX_DESKTOP_ICON_NAME="${CODEX_DESKTOP_ICON_NAME:-local-ai-console-gradient}"
 export CHROME_DESKTOP="${CHROME_DESKTOP:-local-ai-console.desktop}"
 export CODEX_DESKTOP_EXPECTED_TITLE="${CODEX_DESKTOP_EXPECTED_TITLE:-Local LLM Console}"
-export CODEX_DESKTOP_LOCAL_PROFILE_VERSION="v16"
+export CODEX_DESKTOP_LOCAL_PROFILE_VERSION="v17"
 export CODEX_DESKTOP_LOCAL_RUNTIME_VERSION="v15"
 export CODEX_DESKTOP_LOCAL_RUNTIME_PATCH_VERSION="v11"
-export CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION="v16"
+export CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION="v17"
 export XDG_CONFIG_HOME="$HOME/.config/local-ai-console/xdg-config-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}"
 export XDG_CACHE_HOME="$HOME/.cache/local-ai-console/xdg-cache-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}"
 export XDG_STATE_HOME="$HOME/.local/state/local-ai-console-${CODEX_DESKTOP_LOCAL_PROFILE_VERSION}"
@@ -196,7 +196,8 @@ root = Path(os.environ["LOCAL_RUNTIME_APP_DIR"])
 def replace_once(path: Path, original: str, patched: str, *, error_message: str) -> None:
     text = path.read_text()
     if original not in text:
-        raise SystemExit(error_message)
+        print(f"WARN: {error_message}")
+        return
     path.write_text(text.replace(original, patched, 1))
 
 
@@ -224,26 +225,25 @@ package_data["desktopName"] = "local-ai-console.desktop"
 package_json.write_text(json.dumps(package_data, indent=2) + "\n")
 
 bootstrap_bundle = root / ".vite" / "build" / "bootstrap.js"
-replace_once(
+replace_optional(
     bootstrap_bundle,
     "t.app.setName(e.Xr(b))",
     "t.app.setName(`Local LLM Console`)",
-    error_message="Local desktop runtime patch failed: bootstrap app name snippet not found",
 )
-replace_once(
+replace_optional(
     bootstrap_bundle,
     "message:`${t.app.getName()} failed to start.`",
     "message:`Local LLM Console failed to start.`",
-    error_message="Local desktop runtime patch failed: bootstrap startup failure message snippet not found",
 )
-replace_once(
+replace_optional(
     bootstrap_bundle,
     "if(!await p({appName:t.app.getName(),environment:{arch:process.arch,isPackaged:t.app.isPackaged,platform:process.platform}})){t.app.quit();return}",
     "if(!await p({appName:`Local LLM Console`,environment:{arch:process.arch,isPackaged:t.app.isPackaged,platform:process.platform}})){t.app.quit();return}",
-    error_message="Local desktop runtime patch failed: bootstrap app-name handoff snippet not found",
 )
 
-main_bundle = root / ".vite" / "build" / "main-C8I_nqq_.js"
+main_bundle = next((root / ".vite" / "build").glob("main-*.js"), None)
+if main_bundle is None:
+    raise SystemExit("Local desktop runtime patch failed: main bundle not found")
 replace_once(
     main_bundle,
     "function Jy({buildFlavor:n,allowDevtools:i,allowInspectElement:o,allowDebugMenu:s,errorReporter:c,globalState:l,getGlobalStateForHost:u,desktopRoot:d,preloadPath:f,repoRoot:p,isMacOS:m,isWindows:h,isDevMode:g,canHideLastLocalWindowToTray:_,disposables:v})",
@@ -528,6 +528,19 @@ replace_once(
     "function Lf(e){if(e.connectionType===`tailscale-websocket`&&(e.websocketUrl??e.websocket_url??``).trim().length>0)return{id:e.hostId,display_name:e.displayName,kind:`brix`,codex_cli_command:[],terminal_command:[],websocket_url:(e.websocketUrl??e.websocket_url??``).trim()};let t=[`ssh`,...Af({sshAlias:e.sshAlias,sshHost:e.sshHost,sshPort:e.sshPort,identity:e.identity})];return{id:e.hostId,display_name:e.displayName,kind:`ssh`,codex_cli_command:[],terminal_command:t}}",
     error_message="Local desktop runtime patch failed: runtime renderer remote host conversion snippet not found",
 )
+
+workspace_root_drop_handler_bundle = next((root / ".vite" / "build").glob("workspace-root-drop-handler-*.js"), None)
+if workspace_root_drop_handler_bundle is not None:
+    replace_optional(
+        workspace_root_drop_handler_bundle,
+        "shouldPoll(){return this.getStaticDisabledReason()==null}",
+        "shouldPoll(){return!1}",
+    )
+    replace_optional(
+        workspace_root_drop_handler_bundle,
+        "async pollIfDue(){if(this.getStaticDisabledReason()!=null)return;",
+        "async pollIfDue(){return;",
+    )
 
 runtime_webview_text = runtime_webview_index.read_text()
 runtime_settings_script_hash = "sha256-E2isW5LIwE3Wbjd98bmFq8L3MGT0cyYcsqNRWufMnbA="

@@ -131,6 +131,16 @@ prepare_install() {
     fi
 }
 
+sync_install_ownership() {
+    if [ "$(id -u)" -ne 0 ] || [ ! -e "$INSTALL_DIR" ]; then
+        return 0
+    fi
+
+    local owner
+    owner="$(stat -c '%u:%g' "$INSTALL_ROOT")"
+    chown -R "$owner" "$INSTALL_DIR"
+}
+
 linux_codex_target() {
     case "$ARCH" in
         x86_64)
@@ -716,6 +726,7 @@ main() {
     extract_webview "$app_dir"
     install_app
     create_start_script
+    sync_install_ownership
 
     echo ""                                             >&2
     echo "============================================" >&2

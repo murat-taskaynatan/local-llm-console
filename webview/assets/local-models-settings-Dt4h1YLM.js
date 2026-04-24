@@ -260,13 +260,13 @@ async function switchLocalLlmConsoleCurrentSession(e, t = {}) {
         await loadManagedRemoteSessionConnections(),
         e,
       ),
-      r = await sendLocalLlmConsoleRequest(
+      a = await sendLocalLlmConsoleRequest(
         `save-codex-managed-remote-ssh-connections`,
         {
           remoteConnections: n,
         },
       );
-    r?.remoteConnections;
+    a?.remoteConnections;
     let i = await sendLocalLlmConsoleRequest(`set-remote-connection-auto-connect`, {
       hostId: e.hostId,
       autoConnect: !0,
