@@ -60,7 +60,7 @@ function b(e) {
 }
 
 function N(e) {
-  return e === `tailscale` ? `tailscale` : `tailscale`;
+  return e === ee || e === `tailscale` ? ee : ee;
 }
 
 function x(e) {
