@@ -136,7 +136,7 @@
       if (currentText !== snapshot) {
         return;
       }
-      current.finishedAtMs = now();
+      current.finishedAtMs = current.lastUpdateMs ?? now();
       renderRecord(container, current, true);
     }, IDLE_FINALIZE_MS);
   }
@@ -161,6 +161,7 @@
         finishedAtMs: null,
         tokenCount,
         lastText: text,
+        lastUpdateMs: now(),
         idleTimer: 0,
       };
       records.set(container, record);
@@ -178,13 +179,14 @@
     if (text !== record.lastText) {
       record.lastText = text;
       record.tokenCount = tokenCount;
+      record.lastUpdateMs = now();
       record.finishedAtMs = null;
       finalizeAfterIdle(container, record, text);
     }
 
     if (completed && record.finishedAtMs == null) {
       window.clearTimeout(record.idleTimer);
-      record.finishedAtMs = now();
+      record.finishedAtMs = record.lastUpdateMs ?? now();
     }
 
     renderRecord(container, record, completed || record.finishedAtMs != null);
