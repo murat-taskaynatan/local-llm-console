@@ -540,11 +540,11 @@ replace_optional(
 
 runtime_local_models_bundle = next((root / "webview" / "assets").glob("local-models-settings-*.js"), None)
 if runtime_local_models_bundle is None:
-    raise SystemExit("Local desktop runtime patch failed: runtime local-models settings bundle not found")
-
-replace_optional(
-    runtime_local_models_bundle,
-    """async function loadManagedRemoteSessionConnections() {
+    print("WARN: Local desktop runtime patch failed: runtime local-models settings bundle not found")
+else:
+    replace_optional(
+        runtime_local_models_bundle,
+        """async function loadManagedRemoteSessionConnections() {
   let e = await sendLocalLlmConsoleRequest(`refresh-remote-connections`);
   return (e?.remoteConnections ?? []).filter((e) => e?.source === $);
 }
@@ -552,7 +552,7 @@ replace_optional(
 function mergeManagedRemoteSessionConnections(e, t) {
   return [...e.filter((e) => e.hostId !== t.hostId && e.connectionType !== ee), t];
 }""",
-    """async function loadManagedRemoteSessionConnections() {
+        """async function loadManagedRemoteSessionConnections() {
   let e = await sendLocalLlmConsoleRequest(`refresh-remote-connections`);
   let t = e?.remoteConnections;
   return (Array.isArray(t) ? t : []).filter((e) => e?.source === $);
@@ -562,11 +562,11 @@ function mergeManagedRemoteSessionConnections(e, t) {
   let n = Array.isArray(e) ? e : [];
   return [...n.filter((e) => e.hostId !== t.hostId && e.connectionType !== ee), t];
 }""",
-)
+    )
 
-replace_optional(
-    runtime_local_models_bundle,
-    """async function applyLocalLlmConsoleHostService(e = `reload`) {
+    replace_optional(
+        runtime_local_models_bundle,
+        """async function applyLocalLlmConsoleHostService(e = `reload`) {
   let t = await fetch(`/__local-llm-console/host-service`, {
       method: `POST`,
       headers: { "Content-Type": `application/json` },
@@ -617,7 +617,7 @@ replace_optional(
     );
   return n;
 }""",
-)
+    )
 
 replace_once(
     runtime_index_bundle,

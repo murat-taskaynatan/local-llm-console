@@ -9,10 +9,12 @@ import shlex
 import subprocess
 import threading
 import time
+import tempfile
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 
 def clean_string(value: Any, default: str = "") -> str:
@@ -102,6 +104,78 @@ def build_state(config_path: Path, active_mode: str) -> dict[str, Any]:
     }
 
 
+def normalize_provider(value: Any, default: str = "ollama") -> str:
+    value = clean_string(value, default).lower()
+    if value in {"codex", "openai"}:
+        return "codex"
+    if value == "lmstudio":
+        return "lmstudio"
+    return "ollama"
+
+
+def list_models_for_provider(provider: str) -> list[dict[str, str]]:
+    provider = normalize_provider(provider)
+    codex_helper = Path(__file__).with_name("local-ai-console-codex")
+    if not codex_helper.is_file():
+        raise RuntimeError("Bundled Local LLM Console runtime helper is unavailable.")
+
+    runtime_provider = "openai" if provider == "codex" else provider
+    config_lines = [
+        f'model_provider = "{runtime_provider}"',
+        f'oss_provider = "{runtime_provider}"',
+        f'local_llm_console_provider = "{provider}"',
+        'model = "gpt-5.4"' if provider == "codex" else 'model = "gpt-oss:120b"',
+        'model_reasoning_effort = "medium"',
+    ]
+
+    with tempfile.TemporaryDirectory(prefix="local-llm-console-models-") as tmpdir:
+        temp_home = Path(tmpdir)
+        codex_home = temp_home / ".codex-local-desktop"
+        codex_home.mkdir(parents=True, exist_ok=True)
+        (codex_home / "config.toml").write_text("\n".join(config_lines) + "\n", encoding="utf-8")
+
+        env = os.environ.copy()
+        env["HOME"] = str(temp_home)
+        env["CODEX_HOME"] = str(codex_home)
+
+        result = subprocess.run(
+            [str(codex_helper), "debug", "models"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+            env=env,
+        )
+
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or "Unable to query models."
+        raise RuntimeError(message)
+
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Unable to parse model list.") from exc
+
+    models = payload.get("models")
+    if not isinstance(models, list):
+        return []
+
+    items: list[dict[str, str]] = []
+    for model in models:
+        if not isinstance(model, dict):
+            continue
+        slug = clean_string(model.get("slug"))
+        if not slug:
+            continue
+        visibility = clean_string(model.get("visibility"), "list")
+        if visibility not in {"list", ""}:
+            continue
+        label = clean_string(model.get("display_name"), slug)
+        items.append({"value": slug, "label": label})
+
+    return items
+
+
 def relaunch_app(command: str) -> None:
     if not command.strip():
         raise RuntimeError("No relaunch command is configured for Local LLM Console.")
@@ -172,13 +246,33 @@ def make_handler(
                 raise ValueError("Invalid JSON request body.") from exc
 
         def do_GET(self) -> None:
-            if self.path.rstrip("/") == "/__local-llm-console/state":
+            parsed = urlsplit(self.path)
+            route = parsed.path.rstrip("/")
+
+            if route == "/__local-llm-console/state":
                 self.send_json(
                     HTTPStatus.OK,
                     build_state(
                         config_path,
                         os.environ.get("LOCAL_LLM_CONSOLE_ACTIVE_MODE", active_mode),
                     ),
+                )
+                return
+
+            if route == "/__local-llm-console/provider-models":
+                provider = normalize_provider(parse_qs(parsed.query).get("provider", ["ollama"])[0])
+                try:
+                    models = list_models_for_provider(provider)
+                except Exception as exc:  # noqa: BLE001
+                    self.send_json(
+                        HTTPStatus.INTERNAL_SERVER_ERROR,
+                        {"error": str(exc)},
+                    )
+                    return
+
+                self.send_json(
+                    HTTPStatus.OK,
+                    {"provider": provider, "models": models},
                 )
                 return
             super().do_GET()

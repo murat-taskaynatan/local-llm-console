@@ -36,7 +36,7 @@ var p = e(n(), 1),
     { value: `remote`, label: `Connect to remote host` },
   ],
   P = [`gpt-oss:120b`, `qwen3.5:9.7b`, `qwen3.5:122b`],
-  O = [`gpt-5.4`],
+  O = [{ value: `gpt-5.4`, label: `gpt-5.4` }],
   $ = `codex-managed`,
   ee = `tailscale-websocket`,
   remoteProviderId = `local_llm_console_remote`;
@@ -67,12 +67,35 @@ function z(e) {
       : `ollama`;
 }
 
-function B(e) {
-  return z(e) === `codex` ? O : z(e) === `remote` ? [] : P;
+function normalizeModelOptions(e) {
+  return Array.isArray(e)
+    ? e
+        .map((e) =>
+          typeof e == `string`
+            ? { value: e, label: e }
+            : e != null && typeof e.value == `string`
+              ? { value: e.value, label: v(e.label, e.value) }
+              : null,
+        )
+        .filter(Boolean)
+    : [];
 }
 
-function Q(e) {
-  return z(e) === `codex` ? `gpt-5.4` : `gpt-oss:120b`;
+function getProviderModelOptions(e, t = O) {
+  return z(e) === `codex`
+    ? normalizeModelOptions(t)
+    : z(e) === `remote`
+      ? []
+      : normalizeModelOptions(P);
+}
+
+function B(e, t = O) {
+  return getProviderModelOptions(e, t).map((e) => e.value);
+}
+
+function Q(e, t = O) {
+  let n = B(e, t);
+  return n.length > 0 ? n[0] : z(e) === `codex` ? `gpt-5.4` : `gpt-oss:120b`;
 }
 
 function iee(e) {
@@ -93,27 +116,17 @@ function deriveLocalCatalogPath(e, t = ``) {
   return s.length === 0 ? `` : `${o}/${s}-models.json`;
 }
 
-function K(e, t) {
-  let n = v(t, ``),
-    r = B(e),
-    i = z(e) === `codex` ? P : O;
-  return n.length === 0
-    ? Q(e)
-    : r.includes(n)
-      ? n
-      : i.includes(n)
-        ? Q(e)
-        : n;
-}
-
-function normalizeProviderModelForSelection(e, t) {
-  let n = z(e),
-    r = v(t, ``);
-  return n === `codex`
-    ? Q(n)
-    : n === `remote` && (r.length === 0 || O.includes(r))
-      ? Q(n)
-      : K(n, r);
+function K(e, t, n = O) {
+  let r = v(t, ``),
+    i = B(e, n),
+    a = z(e) === `codex` ? P : O.map((e) => e.value);
+  return r.length === 0
+    ? Q(e, n)
+    : i.includes(r)
+      ? r
+      : a.includes(r)
+        ? Q(e, n)
+        : r;
 }
 
 function S(e, t = `443`) {
@@ -148,8 +161,8 @@ function readTomlStringValue(e, t) {
   }
 }
 
-function C(e) {
-  let t = z(
+function C(e, t = O) {
+  let n = z(
     v(
       e?.local_llm_console_provider,
       e?.model_provider,
@@ -158,8 +171,8 @@ function C(e) {
   );
   return {
     launchMode: `local`,
-    provider: t,
-    model: K(t, e?.model),
+    provider: n,
+    model: K(n, e?.model, t),
     reasoning: v(e?.model_reasoning_effort, `medium`),
     catalogPath: v(e?.model_catalog_json, ``),
     providerBaseUrl: v(
@@ -184,11 +197,36 @@ function L(e) {
   return JSON.stringify(e);
 }
 
-function T(e, t) {
-  let n = B(e).map((e) => ({ value: e, label: e }));
-  return t != null && t.length > 0 && !B(e).includes(t)
-    ? [{ value: t, label: `${t} (current)` }, ...n]
-    : n;
+function T(e, t, n = O) {
+  let r = getProviderModelOptions(e, n),
+    i = r.map((e) => e.value);
+  return t != null && t.length > 0 && !i.includes(t)
+    ? [{ value: t, label: `${t} (current)` }, ...r]
+    : r;
+}
+
+async function loadProviderModelOptions(e) {
+  let t = z(e);
+  if (t !== `codex`) return getProviderModelOptions(t);
+  let n;
+  try {
+    n = await fetch(
+      `/__local-llm-console/provider-models?provider=${encodeURIComponent(t)}`,
+      { cache: `no-store` },
+    );
+  } catch {
+    return getProviderModelOptions(t);
+  }
+  let r = null;
+  try {
+    r = await n.json();
+  } catch {}
+  return !n.ok
+    ? getProviderModelOptions(t)
+    : (() => {
+        let e = normalizeModelOptions(r == null ? void 0 : r.models);
+        return e.length > 0 ? e : getProviderModelOptions(t);
+      })();
 }
 
 function normalizeRemoteProviderBaseUrl(e) {
@@ -700,7 +738,10 @@ function RuntimeSettingsContent(props = {}) {
         local_llm_console_remote_provider_base_url: rawRemoteProviderBaseUrl,
       };
     }, [e?.config, rawRemoteProviderBaseUrl]),
-    t = (0, p.useMemo)(() => C(rawConfig), [
+    [cloudModelOptions, setCloudModelOptions] = (0, p.useState)(() =>
+      getProviderModelOptions(`codex`),
+    ),
+    t = (0, p.useMemo)(() => C(rawConfig, cloudModelOptions), [
       rawConfig?.local_llm_console_mode,
       rawConfig?.model_provider,
       rawConfig?.oss_provider,
@@ -716,6 +757,7 @@ function RuntimeSettingsContent(props = {}) {
       rawConfig?.local_llm_console_host_transport,
       rawConfig?.local_llm_console_host_listen_url,
       rawConfig?.local_llm_console_host_https_port,
+      L(cloudModelOptions),
     ]),
     [w, E] = (0, p.useState)(t),
     [D, U] = (0, p.useState)(null),
@@ -734,10 +776,17 @@ function RuntimeSettingsContent(props = {}) {
     se = e?.configWriteTarget?.filePath ?? ``,
     ce = e?.configWriteTarget?.expectedVersion ?? null,
     ye = (0, p.useMemo)(
-      () => ({ ...t, catalogPath: deriveLocalCatalogPath(se, t.catalogPath) }),
-      [se, t.catalogPath, L(t)],
+      () => ({
+        ...t,
+        model: K(t.provider, t.model, cloudModelOptions),
+        catalogPath: deriveLocalCatalogPath(se, t.catalogPath),
+      }),
+      [se, t.catalogPath, t.model, t.provider, L(t), L(cloudModelOptions)],
     ),
-    le = (0, p.useMemo)(() => T(w.provider, w.model), [w.provider, w.model]),
+    le = (0, p.useMemo)(
+      () => T(w.provider, w.model, cloudModelOptions),
+      [w.provider, w.model, L(cloudModelOptions)],
+    ),
     ue = localSignature(ye) !== localSignature(w),
     de = remoteSignature(ye) !== remoteSignature(w),
     fe = ne ? de : ue,
@@ -1362,7 +1411,7 @@ function RuntimeSettingsContent(props = {}) {
                             return {
                               ...t,
                               provider: n,
-                              model: normalizeProviderModelForSelection(n, t.model),
+                              model: K(n, t.model, cloudModelOptions),
                               reasoning: v(t.reasoning, `medium`),
                             };
                           });
@@ -1512,7 +1561,9 @@ function RuntimeSettingsContent(props = {}) {
     let e = !1;
     if (se.length === 0) {
       setRawRemoteProviderBaseUrl(null);
-      return;
+      return () => {
+        e = !0;
+      };
     }
     readLocalLlmConsoleFileRequest(`read-file`, { params: { path: se } })
       .then((t) => {
@@ -1531,6 +1582,21 @@ function RuntimeSettingsContent(props = {}) {
       e = !0;
     };
   }, [se, ce]);
+
+  (0, p.useEffect)(() => {
+    let e = !1;
+    if (z(w.provider) !== `codex`) return;
+    loadProviderModelOptions(`codex`)
+      .then((t) => {
+        e || setCloudModelOptions(t);
+      })
+      .catch(() => {
+        e || setCloudModelOptions(getProviderModelOptions(`codex`));
+      });
+    return () => {
+      e = !0;
+    };
+  }, [w.provider]);
 
   (0, p.useEffect)(() => {
     let e = !1,
