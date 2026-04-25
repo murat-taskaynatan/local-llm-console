@@ -1,5 +1,11 @@
 (() => {
   const MESSAGE_SELECTOR = `div.group.flex.min-w-0.flex-col`;
+  const MESSAGE_FALLBACK_SELECTORS = [
+    `div.group.flex.min-w-0`,
+    `div.group.min-w-0.flex-col`,
+    `div.group.flex.flex-col`,
+    `div.flex.min-w-0.flex-col`,
+  ];
   const COMPLETE_SELECTOR = [
     `button[aria-label="Good response"]`,
     `button[aria-label="Bad response"]`,
@@ -7,6 +13,7 @@
   ].join(`,`);
   const STYLE_ID = `local-llm-console-tokens-per-second-style`;
   const LABEL_ATTR = `data-local-llm-console-tokens-per-second`;
+  const RATE_ATTR = `data-local-llm-console-token-rate`;
   const IDLE_FINALIZE_MS = 1800;
   const MIN_ELAPSED_SECONDS = 0.25;
   const records = new WeakMap();
@@ -19,14 +26,16 @@
     const style = document.createElement(`style`);
     style.id = STYLE_ID;
     style.textContent = `
-      [${LABEL_ATTR}]::after {
-        content: attr(${LABEL_ATTR});
+      .local-llm-console-tokens-per-second-badge {
         display: block;
-        margin-top: 0.5rem;
-        font-size: 0.75rem;
+        margin-top: 0.35rem;
+        margin-right: auto;
+        color: var(--text-token-description-foreground, rgb(142 142 160));
+        font-size: 0.7rem;
         line-height: 1rem;
-        color: var(--text-token-text-tertiary, var(--text-token-description-foreground, rgb(142 142 160)));
         font-variant-numeric: tabular-nums;
+        pointer-events: none;
+        white-space: nowrap;
       }
     `;
     document.head.appendChild(style);
@@ -57,23 +66,38 @@
     return value >= 10 ? String(Math.round(value)) : String(Math.round(value * 10) / 10);
   }
 
+  function matchesMessageSelector(element) {
+    return element.matches(MESSAGE_SELECTOR) || MESSAGE_FALLBACK_SELECTORS.some((selector) => element.matches(selector));
+  }
+
   function isAssistantMessageContainer(element) {
     if (!(element instanceof HTMLElement)) {
       return false;
     }
-    if (!element.matches(MESSAGE_SELECTOR)) {
+    if (!matchesMessageSelector(element)) {
       return false;
     }
     if (element.closest(`[data-local-llm-console-ignore-tps="true"]`)) {
       return false;
     }
-    return getContentElement(element) instanceof HTMLElement;
+    const content = getContentElement(element);
+    if (!(content instanceof HTMLElement)) {
+      return false;
+    }
+    return content.textContent?.trim().length > 0;
   }
 
   function findMessageContainer(node) {
     const element =
       node instanceof Element ? node : node?.parentElement instanceof Element ? node.parentElement : null;
-    return element?.closest(MESSAGE_SELECTOR) ?? null;
+    if (!(element instanceof Element)) {
+      return null;
+    }
+    return (
+      element.closest(MESSAGE_SELECTOR) ??
+      MESSAGE_FALLBACK_SELECTORS.map((selector) => element.closest(selector)).find((candidate) => candidate instanceof HTMLElement) ??
+      null
+    );
   }
 
   function getContentElement(container) {
@@ -98,14 +122,34 @@
     if (!(content instanceof HTMLElement)) {
       return;
     }
+    const existing = container.querySelector(`:scope > [${RATE_ATTR}]`);
+    const footer = container.querySelector(`:scope > .mt-3.flex.h-5`);
     if (label == null) {
       content.removeAttribute(LABEL_ATTR);
       content.removeAttribute(`data-local-llm-console-tokens-complete`);
+      existing?.remove();
       return;
     }
     content.setAttribute(LABEL_ATTR, label);
     content.setAttribute(`data-local-llm-console-tokens-complete`, `true`);
     content.title = `Estimated from streamed assistant text in this window.`;
+    let rateNode = existing;
+    if (!(rateNode instanceof HTMLElement)) {
+      rateNode = document.createElement(`span`);
+      rateNode.setAttribute(RATE_ATTR, `true`);
+      rateNode.className = `local-llm-console-tokens-per-second-badge`;
+      rateNode.setAttribute(`aria-hidden`, `true`);
+      if (footer instanceof HTMLElement) {
+        footer.insertAdjacentElement(`beforebegin`, rateNode);
+      } else {
+        content.insertAdjacentElement(`afterend`, rateNode);
+      }
+    } else if (footer instanceof HTMLElement && rateNode.nextElementSibling !== footer) {
+      footer.insertAdjacentElement(`beforebegin`, rateNode);
+    } else if (!(footer instanceof HTMLElement) && rateNode.previousElementSibling !== content) {
+      content.insertAdjacentElement(`afterend`, rateNode);
+    }
+    rateNode.textContent = label;
   }
 
   function renderRecord(container, record, completed) {
@@ -153,7 +197,7 @@
     let record = records.get(container);
 
     if (!record) {
-      if (completed || tokenCount === 0) {
+      if (tokenCount === 0) {
         return;
       }
       record = {
@@ -166,6 +210,9 @@
       };
       records.set(container, record);
       finalizeAfterIdle(container, record, text);
+      if (completed) {
+        return;
+      }
       return;
     }
 
@@ -202,16 +249,22 @@
       if (nearest instanceof HTMLElement) {
         containers.add(nearest);
       }
-      root.querySelectorAll?.(MESSAGE_SELECTOR).forEach((element) => {
-        if (element instanceof HTMLElement) {
-          containers.add(element);
-        }
+      const selectors = [MESSAGE_SELECTOR, ...MESSAGE_FALLBACK_SELECTORS];
+      selectors.forEach((selector) => {
+        root.querySelectorAll?.(selector).forEach((element) => {
+          if (element instanceof HTMLElement) {
+            containers.add(element);
+          }
+        });
       });
     } else {
-      document.querySelectorAll(MESSAGE_SELECTOR).forEach((element) => {
-        if (element instanceof HTMLElement) {
-          containers.add(element);
-        }
+      const selectors = [MESSAGE_SELECTOR, ...MESSAGE_FALLBACK_SELECTORS];
+      selectors.forEach((selector) => {
+        document.querySelectorAll(selector).forEach((element) => {
+          if (element instanceof HTMLElement) {
+            containers.add(element);
+          }
+        });
       });
     }
     containers.forEach(updateContainer);
@@ -224,7 +277,7 @@
     pendingScan = true;
     window.requestAnimationFrame(() => {
       pendingScan = false;
-      scan(root);
+      scan(document);
     });
   }
 

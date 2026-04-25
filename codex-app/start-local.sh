@@ -102,6 +102,7 @@ LOCAL_RUNTIME_APP_DIR="${CODEX_DESKTOP_LOCAL_RUNTIME_APP_DIR:-$LOCAL_RUNTIME_ROO
 LOCAL_RUNTIME_STAMP="${LOCAL_RUNTIME_ROOT}/source-stamp.txt"
 LOCAL_SHELL_ASAR_STAMP="${LOCAL_RUNTIME_ROOT}/shell-asar-stamp.txt"
 LOCAL_RUNTIME_ICON_PATH="${CODEX_DESKTOP_WINDOW_ICON_PATH:-$REPO_ROOT/assets/local-ai-console-gradient.png}"
+export LOCAL_TOKENS_PER_SECOND_SOURCE_PATH="${CODEX_DESKTOP_LOCAL_TOKENS_PER_SECOND_SOURCE_PATH:-$REPO_ROOT/webview/assets/local-llm-console-tokens-per-second.js}"
 LOCAL_BOOTSTRAP_SOURCE_PATH="${CODEX_DESKTOP_LOCAL_BOOTSTRAP_SOURCE_PATH:-$REPO_ROOT/webview/assets/local-ai-console-bootstrap.js}"
 LOCAL_SOURCE_ASAR=""
 export CODEX_DESKTOP_POST_LAUNCH_HOOK="${CODEX_DESKTOP_POST_LAUNCH_HOOK:-$SCRIPT_DIR/.codex-linux/local-ai-console-x11-title-fix.sh}"
@@ -203,7 +204,7 @@ terminate_stale_local_runtime_processes() {
     fi
 }
 
-LOCAL_SOURCE_FINGERPRINT="$(file_fingerprint "$LOCAL_SOURCE_ASAR")|$(file_fingerprint "$SCRIPT_DIR/start-local.sh")|$(file_fingerprint "$LOCAL_BOOTSTRAP_SOURCE_PATH")|${CODEX_DESKTOP_LOCAL_RUNTIME_VERSION}|${CODEX_DESKTOP_LOCAL_RUNTIME_PATCH_VERSION}"
+LOCAL_SOURCE_FINGERPRINT="$(file_fingerprint "$LOCAL_SOURCE_ASAR")|$(file_fingerprint "$SCRIPT_DIR/start-local.sh")|$(file_fingerprint "$LOCAL_BOOTSTRAP_SOURCE_PATH")|$(file_fingerprint "$LOCAL_TOKENS_PER_SECOND_SOURCE_PATH")|${CODEX_DESKTOP_LOCAL_RUNTIME_VERSION}|${CODEX_DESKTOP_LOCAL_RUNTIME_PATCH_VERSION}"
 LOCAL_RUNTIME_NEEDS_REBUILD=1
 if [[ -d "$LOCAL_RUNTIME_APP_DIR" && -f "$LOCAL_RUNTIME_STAMP" ]]; then
     if [[ "$(<"$LOCAL_RUNTIME_STAMP")" == "$LOCAL_SOURCE_FINGERPRINT" ]]; then
@@ -706,6 +707,7 @@ if workspace_root_drop_handler_bundle is not None:
 
 runtime_webview_text = runtime_webview_index.read_text()
 runtime_settings_script_hash = "sha256-E2isW5LIwE3Wbjd98bmFq8L3MGT0cyYcsqNRWufMnbA="
+runtime_tokens_script_tag = '    <script src="./assets/local-llm-console-tokens-per-second.js?v=20260425a"></script>\n'
 runtime_bootstrap_script_tag = '    <script src="./assets/local-ai-console-bootstrap.js"></script>\n'
 runtime_settings_script = """    <script>
       (() => {
@@ -790,6 +792,22 @@ if "./assets/local-ai-console-bootstrap.js" not in runtime_webview_text:
         1,
     )
 
+if "./assets/local-llm-console-tokens-per-second.js" not in runtime_webview_text:
+    if runtime_bootstrap_script_tag in runtime_webview_text:
+        runtime_webview_text = runtime_webview_text.replace(
+            runtime_bootstrap_script_tag,
+            f"{runtime_tokens_script_tag}{runtime_bootstrap_script_tag}",
+            1,
+        )
+    elif "</body>" in runtime_webview_text:
+        runtime_webview_text = runtime_webview_text.replace(
+            "</body>",
+            f"{runtime_tokens_script_tag}{runtime_bootstrap_script_tag}</body>",
+            1,
+        )
+    else:
+        raise SystemExit("Local desktop runtime patch failed: runtime webview body end snippet not found")
+
 if runtime_settings_script_hash not in runtime_webview_text:
     if runtime_settings_csp_original in runtime_webview_text:
         runtime_webview_text = runtime_webview_text.replace(
@@ -810,12 +828,15 @@ runtime_webview_index.write_text(runtime_webview_text)
 
 runtime_webview_assets = root / "webview" / "assets"
 runtime_icon_source = Path(os.environ["LOCAL_RUNTIME_ICON_PATH"])
+runtime_tokens_source = Path(os.environ["LOCAL_TOKENS_PER_SECOND_SOURCE_PATH"])
 runtime_bootstrap_source = Path(os.environ["LOCAL_BOOTSTRAP_SOURCE_PATH"])
 runtime_icon_target = runtime_webview_assets / "local-ai-console-gradient.png"
 if runtime_icon_source.exists():
     runtime_icon_target.write_bytes(runtime_icon_source.read_bytes())
     packaged_runtime_icon_target = runtime_webview_assets / "app-D0g8sCle.png"
     packaged_runtime_icon_target.write_bytes(runtime_icon_source.read_bytes())
+if runtime_tokens_source.exists():
+    (runtime_webview_assets / "local-llm-console-tokens-per-second.js").write_bytes(runtime_tokens_source.read_bytes())
 if runtime_bootstrap_source.exists():
     (runtime_webview_assets / "local-ai-console-bootstrap.js").write_bytes(runtime_bootstrap_source.read_bytes())
 
@@ -878,15 +899,16 @@ fi
 SOURCE_WEBVIEW_DIR="$LOCAL_WEBVIEW_SOURCE_DIR"
 export CODEX_DESKTOP_WEBVIEW_DIR="$LOCAL_WEBVIEW_DIR"
 LOCAL_WEBVIEW_SOURCE_FINGERPRINT="$(
-    {
-        printf 'source:%s\n' "$(dir_fingerprint "$LOCAL_WEBVIEW_SOURCE_DIR")"
-        printf 'launcher:%s\n' "$(file_fingerprint "$SCRIPT_DIR/start-local.sh")"
-        printf 'patch-version:%s\n' "$CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION"
-    } | python3 - <<'PY'
+    python3 - \
+        "$(dir_fingerprint "$LOCAL_WEBVIEW_SOURCE_DIR")" \
+        "$(file_fingerprint "$SCRIPT_DIR/start-local.sh")" \
+        "$(file_fingerprint "$LOCAL_TOKENS_PER_SECOND_SOURCE_PATH")" \
+        "$CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION" <<'PY'
 import hashlib
 import sys
 
-print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())
+payload = "\n".join(sys.argv[1:]).encode("utf-8")
+print(hashlib.sha256(payload).hexdigest())
 PY
 )"
 LOCAL_WEBVIEW_NEEDS_REBUILD=1

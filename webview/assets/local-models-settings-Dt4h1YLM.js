@@ -106,9 +106,9 @@ function iee(e) {
 function deriveLocalCatalogPath(e, t = ``) {
   let n = v(t, ``);
   if (n.length > 0) return n;
-  let r = v(e, ``).replace(/\\/g, `/`);
-  if (!r.endsWith(`/config.toml`)) return ``;
-  let i = r.slice(0, -`/config.toml`.length),
+  let normalizedPath = v(e, ``).replace(/\\/g, `/`);
+  if (!normalizedPath.endsWith(`/config.toml`)) return ``;
+  let i = normalizedPath.slice(0, -`/config.toml`.length),
     a = i.lastIndexOf(`/`);
   if (a <= 0) return ``;
   let o = i.slice(0, a),
@@ -117,16 +117,16 @@ function deriveLocalCatalogPath(e, t = ``) {
 }
 
 function K(e, t, n = O) {
-  let r = v(t, ``),
+  let modelValue = v(t, ``),
     i = B(e, n),
     a = z(e) === `codex` ? P : O.map((e) => e.value);
-  return r.length === 0
+  return modelValue.length === 0
     ? Q(e, n)
-    : i.includes(r)
-      ? r
-      : a.includes(r)
+    : i.includes(modelValue)
+      ? modelValue
+      : a.includes(modelValue)
         ? Q(e, n)
-        : r;
+        : modelValue;
 }
 
 function S(e, t = `443`) {
@@ -198,11 +198,11 @@ function L(e) {
 }
 
 function T(e, t, n = O) {
-  let r = getProviderModelOptions(e, n),
-    i = r.map((e) => e.value);
+  let providerModelOptions = getProviderModelOptions(e, n),
+    i = providerModelOptions.map((e) => e.value);
   return t != null && t.length > 0 && !i.includes(t)
-    ? [{ value: t, label: `${t} (current)` }, ...r]
-    : r;
+    ? [{ value: t, label: `${t} (current)` }, ...providerModelOptions]
+    : providerModelOptions;
 }
 
 async function loadProviderModelOptions(e) {
@@ -217,14 +217,14 @@ async function loadProviderModelOptions(e) {
   } catch {
     return getProviderModelOptions(t);
   }
-  let r = null;
+  let responseJson = null;
   try {
-    r = await n.json();
+    responseJson = await n.json();
   } catch {}
   return !n.ok
     ? getProviderModelOptions(t)
     : (() => {
-        let e = normalizeModelOptions(r == null ? void 0 : r.models);
+        let e = normalizeModelOptions(responseJson == null ? void 0 : responseJson.models);
         return e.length > 0 ? e : getProviderModelOptions(t);
       })();
 }
@@ -551,10 +551,10 @@ function reloadCurrentSessionForHost(e) {
 async function switchLocalLlmConsoleCurrentSession(e, t = {}) {
   let n = b(e);
   if (n === `remote`) {
-    let r = v(t.remoteUrl, readLocalLlmConsoleSessionState()?.remoteUrl, ``);
-    if (!hasValidRemoteHostUrl(r))
+    let remoteUrlValue = v(t.remoteUrl, readLocalLlmConsoleSessionState()?.remoteUrl, ``);
+    if (!hasValidRemoteHostUrl(remoteUrlValue))
       throw new Error(`Please enter a valid remote host.`);
-    let e = buildRemoteSessionRecord(r),
+    let e = buildRemoteSessionRecord(remoteUrlValue),
       n = mergeManagedRemoteSessionConnections(
         await loadManagedRemoteSessionConnections(),
         e,
@@ -577,10 +577,10 @@ async function switchLocalLlmConsoleCurrentSession(e, t = {}) {
     reloadCurrentSessionForHost(e.hostId);
     return e;
   }
-  let r = v(t.hostId, getCurrentSessionHostId(), ``);
-  if (r.length > 0) {
+  let hostIdValue = v(t.hostId, getCurrentSessionHostId(), ``);
+  if (hostIdValue.length > 0) {
     let e = await sendLocalLlmConsoleRequest(`set-remote-connection-auto-connect`, {
-      hostId: r,
+      hostId: hostIdValue,
       autoConnect: !1,
     });
     if (
@@ -982,8 +982,8 @@ function RuntimeSettingsContent(props = {}) {
           });
         } catch (e) {
           if (!isLocalLlmConsoleConfigVersionConflict(e)) throw e;
-          let t = await r(),
-            n = t?.data?.configWriteTarget ?? null,
+          let freshWriteTarget = await r(),
+            n = freshWriteTarget?.data?.configWriteTarget ?? null,
             a = n?.filePath ?? se ?? null,
             o = n?.expectedVersion ?? null;
           await i.mutateAsync({
@@ -1009,10 +1009,10 @@ function RuntimeSettingsContent(props = {}) {
             model: o,
             reasoning: s,
           });
-          let e = await r(),
-            t = e?.data?.config ?? {},
+          let refreshedConfig = await r(),
+            t = refreshedConfig?.data?.config ?? {},
             n = C(t),
-            i = e?.data?.configWriteTarget?.filePath ?? se;
+            i = refreshedConfig?.data?.configWriteTarget?.filePath ?? se;
           E({ ...n, catalogPath: deriveLocalCatalogPath(i, n.catalogPath) });
           U({
             tone: `success`,
@@ -1097,14 +1097,14 @@ function RuntimeSettingsContent(props = {}) {
         });
         return;
       }
-      let r = await xe(w.launchMode, {
+      let saveResult = await xe(w.launchMode, {
         scope: `remote`,
         hostAction: e === `on` ? `start` : `stop`,
         nextState: n,
         savingText: e === `on` ? `Starting local server...` : `Stopping local server...`,
         successText: e === `on` ? `Local server started.` : `Local server stopped.`,
       });
-      r || E((e) => ({ ...e, hostMode: t }));
+      saveResult || E((e) => ({ ...e, hostMode: t }));
     },
     Ce = () => {
       E((e) => ({
