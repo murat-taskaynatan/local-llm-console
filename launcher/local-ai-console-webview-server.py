@@ -9,7 +9,6 @@ import shlex
 import subprocess
 import threading
 import time
-import tomllib
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -31,8 +30,33 @@ def clean_mode(value: Any, default: str = "local") -> str:
 def read_config(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
-    with path.open("rb") as handle:
-        return tomllib.load(handle)
+    config: dict[str, Any] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("["):
+            continue
+        if "=" not in stripped:
+            continue
+        key, raw_value = stripped.split("=", 1)
+        key = key.strip()
+        value = raw_value.split("#", 1)[0].strip()
+        if not key:
+            continue
+        if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+            config[key] = bytes(value[1:-1], "utf-8").decode("unicode_escape")
+            continue
+        lowered = value.lower()
+        if lowered == "true":
+            config[key] = True
+            continue
+        if lowered == "false":
+            config[key] = False
+            continue
+        try:
+            config[key] = int(value)
+        except ValueError:
+            config[key] = value
+    return config
 
 
 def toml_literal(value: Any) -> str:

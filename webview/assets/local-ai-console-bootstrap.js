@@ -1,5 +1,6 @@
 (() => {
   const SETTINGS_PATH = `/settings/general-settings`;
+  const LOCAL_ONLY_AUTH_KEY = `local-llm-console.continue-without-chatgpt`;
   const SESSION_STATE_PATH = `/__local-llm-console/state`;
   const SESSION_MODE_PATH = `/__local-llm-console/session-mode`;
   const SESSION_STATE_EVENT = `local-llm-console-state`;
@@ -61,6 +62,16 @@
     }
     window.history.pushState({}, ``, nextPath);
     window.dispatchEvent(new PopStateEvent(`popstate`));
+  }
+
+  function continueWithoutChatGPT() {
+    try {
+      window.localStorage?.setItem(LOCAL_ONLY_AUTH_KEY, `true`);
+    } catch (error) {
+      console.error(error);
+    }
+
+    window.location.assign(`/`);
   }
 
   function normalizeMode(value) {
@@ -222,10 +233,105 @@
     target.remove();
   }
 
+  function findLoginActionContainer(root = document) {
+    if (root == null || typeof root.querySelectorAll !== `function`) {
+      return null;
+    }
+
+    const buttons = Array.from(root.querySelectorAll(`button`));
+    for (const button of buttons) {
+      const text = normalizeText(button.textContent);
+      if (!text) {
+        continue;
+      }
+      if (text === `Continue with ChatGPT` || text === `Cancel sign-in` || text === `Enter API key`) {
+        const container = button.parentElement;
+        if (container instanceof HTMLElement) {
+          return container;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  function createLocalOnlyButton() {
+    const button = document.createElement(`button`);
+    button.type = `button`;
+    button.dataset.localOnlyAuthButton = `true`;
+    button.textContent = `Continue without ChatGPT`;
+    button.className = `w-full justify-center py-2.5`;
+    button.style.display = `inline-flex`;
+    button.style.alignItems = `center`;
+    button.style.justifyContent = `center`;
+    button.style.width = `100%`;
+    button.style.borderRadius = `0.75rem`;
+    button.style.border = `1px solid rgba(0,0,0,0.12)`;
+    button.style.padding = `0.75rem 1rem`;
+    button.style.background = `rgba(255,255,255,0.92)`;
+    button.style.color = `#111827`;
+    button.style.font = `inherit`;
+    button.style.fontWeight = `500`;
+    button.style.cursor = `pointer`;
+    button.style.boxSizing = `border-box`;
+    button.addEventListener(`click`, () => {
+      continueWithoutChatGPT();
+    });
+    return button;
+  }
+
+  function ensureFloatingLocalOnlyButton() {
+    const onLoginRoute = window.location.pathname === `/login`;
+    let button = document.querySelector(`[data-local-only-auth-floating="true"]`);
+
+    if (!onLoginRoute) {
+      if (button instanceof HTMLElement) {
+        button.remove();
+      }
+      return;
+    }
+
+    if (!(button instanceof HTMLButtonElement)) {
+      button = createLocalOnlyButton();
+      button.dataset.localOnlyAuthFloating = `true`;
+      button.dataset.localOnlyAuthButton = `false`;
+      button.style.position = `fixed`;
+      button.style.left = `50%`;
+      button.style.bottom = `24px`;
+      button.style.transform = `translateX(-50%)`;
+      button.style.zIndex = `2147483647`;
+      button.style.width = `min(320px, calc(100vw - 32px))`;
+      button.style.boxShadow = `0 12px 32px rgba(0,0,0,0.22)`;
+      button.style.background = `#ffffff`;
+      button.style.border = `1px solid rgba(17,24,39,0.14)`;
+      document.body.appendChild(button);
+    }
+
+    button.style.display = `inline-flex`;
+  }
+
+  function ensureLocalOnlyLoginButton(root = document) {
+    const actionContainer = findLoginActionContainer(root);
+    if (!(actionContainer instanceof HTMLElement)) {
+      ensureFloatingLocalOnlyButton();
+      return;
+    }
+
+    let button = actionContainer.querySelector(`[data-local-only-auth-button="true"]`);
+    if (!(button instanceof HTMLButtonElement)) {
+      button = createLocalOnlyButton();
+      actionContainer.appendChild(button);
+    }
+
+    button.style.display = `inline-flex`;
+    ensureFloatingLocalOnlyButton();
+  }
+
   function scanNode(node) {
     if (!(node instanceof Element)) {
       return;
     }
+    ensureLocalOnlyLoginButton(node);
     if (isAnnouncementText(node.textContent)) {
       suppressAnnouncement(node);
       return;
@@ -235,6 +341,7 @@
         suppressAnnouncement(candidate);
       }
     }
+    ensureLocalOnlyLoginButton(node);
   }
 
   function startObserver() {
@@ -256,6 +363,8 @@
     });
 
     scanNode(document.body);
+    ensureLocalOnlyLoginButton(document);
+    ensureFloatingLocalOnlyButton();
     observer.observe(document.documentElement, {
       childList: true,
       characterData: true,
@@ -263,9 +372,40 @@
     });
     window.setTimeout(() => scanNode(document.body), 250);
     window.setTimeout(() => scanNode(document.body), 1000);
+    window.setTimeout(() => ensureLocalOnlyLoginButton(document), 250);
+    window.setTimeout(() => ensureLocalOnlyLoginButton(document), 1000);
+    window.setTimeout(() => ensureFloatingLocalOnlyButton(), 250);
+    window.setTimeout(() => ensureFloatingLocalOnlyButton(), 1000);
+  }
+
+  function showStandaloneBrowserFallback() {
+    if (window.electronBridge != null || window.location.protocol === `app:` || window.location.protocol === `file:`) {
+      return;
+    }
+
+    const root = document.getElementById(`root`);
+    if (!(root instanceof HTMLElement)) {
+      return;
+    }
+
+    if (root.dataset.localLlmConsoleStandaloneFallback === `true`) {
+      return;
+    }
+
+    root.dataset.localLlmConsoleStandaloneFallback = `true`;
+    root.innerHTML = `
+      <div style="min-height:100%;display:grid;place-items:center;background:#050809;color:#f4fbfb;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:24px;box-sizing:border-box;">
+        <div style="max-width:560px;border:1px solid rgba(115,245,255,.22);border-radius:24px;background:linear-gradient(145deg,rgba(16,32,36,.96),rgba(5,10,12,.96));box-shadow:0 24px 80px rgba(0,0,0,.45),0 0 60px rgba(31,220,230,.12);padding:28px;">
+          <div style="width:48px;height:48px;border-radius:16px;background:linear-gradient(135deg,#274147,#00b5c8);display:grid;place-items:center;margin-bottom:18px;box-shadow:0 12px 32px rgba(0,181,200,.25);font-size:26px;line-height:1;">&gt;_</div>
+          <h1 style="margin:0 0 10px;font-size:24px;line-height:1.15;font-weight:720;">Open the desktop app, not this static preview</h1>
+          <p style="margin:0 0 14px;color:#b9c9cc;line-height:1.55;font-size:15px;">This browser URL is only the Local LLM Console webview shell. It does not include Electron's desktop bridge, so it cannot finish booting here.</p>
+          <p style="margin:0;color:#dffcff;line-height:1.55;font-size:15px;">Launch <strong>Local LLM Console.app</strong> from <strong>~/Applications</strong>. If the desktop window is still blank, the packaged app logs are now isolated from Codex so we can debug that path directly.</p>
+        </div>
+      </div>`;
   }
 
   window.__openLocalSettings = openLocalSettings;
+  window.__continueLocalLLMConsoleWithoutChatGPT = continueWithoutChatGPT;
   window.__getLocalLLMConsoleState = getSessionState;
   window.__isLocalLLMConsoleRemoteConnected = isRemoteConnected;
   window.__refreshLocalLLMConsoleState = refreshSessionState;
@@ -283,11 +423,13 @@
       () => {
         startObserver();
         refreshSessionState().catch(() => {});
+        window.setTimeout(showStandaloneBrowserFallback, 2500);
       },
       { once: true },
     );
   } else {
     startObserver();
     refreshSessionState().catch(() => {});
+    window.setTimeout(showStandaloneBrowserFallback, 2500);
   }
 })();

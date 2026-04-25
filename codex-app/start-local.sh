@@ -36,6 +36,39 @@ export CODEX_DESKTOP_WEBVIEW_SERVER_SCRIPT="${CODEX_DESKTOP_WEBVIEW_SERVER_SCRIP
 export LOCAL_LLM_CONSOLE_CONFIG_PATH="${LOCAL_LLM_CONSOLE_CONFIG_PATH:-$CODEX_HOME/config.toml}"
 export LOCAL_LLM_CONSOLE_RELAUNCH_COMMAND="${LOCAL_LLM_CONSOLE_RELAUNCH_COMMAND:-$REPO_ROOT/launcher/local-ai-console-launch}"
 
+file_fingerprint() {
+    python3 - "$1" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+if not path.exists():
+    print("missing:0")
+    raise SystemExit(0)
+
+stat = path.stat()
+print(f"{int(stat.st_mtime)}:{stat.st_size}")
+PY
+}
+
+dir_fingerprint() {
+    python3 - "$1" <<'PY'
+from pathlib import Path
+import hashlib
+import sys
+
+root = Path(sys.argv[1])
+entries = []
+if root.exists():
+    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+        stat = path.stat()
+        entries.append(f"{path.relative_to(root).as_posix()}:{stat.st_size}:{stat.st_mtime_ns}")
+
+payload = "\n".join(entries).encode("utf-8")
+print(hashlib.sha256(payload).hexdigest())
+PY
+}
+
 if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "${XDG_RUNTIME_DIR}/bus" ]]; then
     export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
 fi
@@ -76,17 +109,14 @@ LOCAL_HOST_SERVICE_HELPER="${CODEX_DESKTOP_LOCAL_HOST_SERVICE_HELPER:-$REPO_ROOT
 export LOCAL_LLM_CONSOLE_HOST_SERVICE_HELPER="${LOCAL_LLM_CONSOLE_HOST_SERVICE_HELPER:-$LOCAL_HOST_SERVICE_HELPER}"
 mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$LOCAL_USER_DATA_DIR" "$(dirname "$LOCAL_WEBVIEW_DIR")" "$LOCAL_RUNTIME_ROOT" "$BASE_RESOURCES_DIR"
 
-mapfile -t LOCAL_LLM_CONSOLE_LAUNCH_STATE < <(
+LOCAL_LLM_CONSOLE_ACTIVE_MODE="$(
   python3 - "$LOCAL_LLM_CONSOLE_CONFIG_PATH" <<'PY'
 from pathlib import Path
+import re
 import sys
-import tomllib
 
 path = Path(sys.argv[1])
-config = {}
-if path.is_file():
-    with path.open("rb") as handle:
-        config = tomllib.load(handle)
+text = path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
 def clean_string(value, default=""):
@@ -96,15 +126,15 @@ def clean_string(value, default=""):
     return value or default
 
 
-mode = clean_string(config.get("local_llm_console_mode"), "local")
+match = re.search(r'(?m)^\s*local_llm_console_mode\s*=\s*"([^"]*)"', text)
+mode = clean_string(match.group(1) if match else "", "local")
 if mode not in {"local", "remote"}:
     mode = "local"
 
 print(mode)
 PY
-)
-
-export LOCAL_LLM_CONSOLE_ACTIVE_MODE="${LOCAL_LLM_CONSOLE_LAUNCH_STATE[0]:-local}"
+)"
+export LOCAL_LLM_CONSOLE_ACTIVE_MODE="${LOCAL_LLM_CONSOLE_ACTIVE_MODE:-local}"
 
 if [[ -f "$BASE_SHELL_ASAR" && ! -f "$BASE_UPSTREAM_SOURCE_ASAR" ]]; then
     cp -p "$BASE_SHELL_ASAR" "$BASE_UPSTREAM_SOURCE_ASAR"
@@ -173,7 +203,7 @@ terminate_stale_local_runtime_processes() {
     fi
 }
 
-LOCAL_SOURCE_FINGERPRINT="$(stat -c '%Y:%s' "$LOCAL_SOURCE_ASAR")|$(stat -c '%Y:%s' "$SCRIPT_DIR/start-local.sh")|$(stat -c '%Y:%s' "$LOCAL_BOOTSTRAP_SOURCE_PATH")|${CODEX_DESKTOP_LOCAL_RUNTIME_VERSION}|${CODEX_DESKTOP_LOCAL_RUNTIME_PATCH_VERSION}"
+LOCAL_SOURCE_FINGERPRINT="$(file_fingerprint "$LOCAL_SOURCE_ASAR")|$(file_fingerprint "$SCRIPT_DIR/start-local.sh")|$(file_fingerprint "$LOCAL_BOOTSTRAP_SOURCE_PATH")|${CODEX_DESKTOP_LOCAL_RUNTIME_VERSION}|${CODEX_DESKTOP_LOCAL_RUNTIME_PATCH_VERSION}"
 LOCAL_RUNTIME_NEEDS_REBUILD=1
 if [[ -d "$LOCAL_RUNTIME_APP_DIR" && -f "$LOCAL_RUNTIME_STAMP" ]]; then
     if [[ "$(<"$LOCAL_RUNTIME_STAMP")" == "$LOCAL_SOURCE_FINGERPRINT" ]]; then
@@ -847,11 +877,18 @@ fi
 
 SOURCE_WEBVIEW_DIR="$LOCAL_WEBVIEW_SOURCE_DIR"
 export CODEX_DESKTOP_WEBVIEW_DIR="$LOCAL_WEBVIEW_DIR"
-LOCAL_WEBVIEW_SOURCE_FINGERPRINT="$({
-    find "$LOCAL_WEBVIEW_SOURCE_DIR" -type f -printf '%P:%s:%T@\n' | LC_ALL=C sort
-    printf 'launcher:%s\n' "$(stat -c '%Y:%s' "$SCRIPT_DIR/start-local.sh")"
-    printf 'patch-version:%s\n' "$CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION"
-} | sha256sum | awk '{print $1}')"
+LOCAL_WEBVIEW_SOURCE_FINGERPRINT="$(
+    {
+        printf 'source:%s\n' "$(dir_fingerprint "$LOCAL_WEBVIEW_SOURCE_DIR")"
+        printf 'launcher:%s\n' "$(file_fingerprint "$SCRIPT_DIR/start-local.sh")"
+        printf 'patch-version:%s\n' "$CODEX_DESKTOP_LOCAL_WEBVIEW_PATCH_VERSION"
+    } | python3 - <<'PY'
+import hashlib
+import sys
+
+print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())
+PY
+)"
 LOCAL_WEBVIEW_NEEDS_REBUILD=1
 if [[ -d "$LOCAL_WEBVIEW_DIR" && -f "$LOCAL_WEBVIEW_STAMP" ]]; then
     if [[ "$(<"$LOCAL_WEBVIEW_STAMP")" == "$LOCAL_WEBVIEW_SOURCE_FINGERPRINT" ]]; then

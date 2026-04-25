@@ -7,6 +7,14 @@ USER_UID="$(id -u)"
 XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${USER_UID}}"
 export XDG_RUNTIME_DIR
 
+iso_timestamp() {
+    if date -u +"%Y-%m-%dT%H:%M:%SZ" >/dev/null 2>&1; then
+        date -u +"%Y-%m-%dT%H:%M:%SZ"
+    else
+        date
+    fi
+}
+
 if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "${XDG_RUNTIME_DIR}/bus" ]]; then
     export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
 fi
@@ -28,7 +36,7 @@ if [[ -z "${XAUTHORITY:-}" ]]; then
 fi
 
 printf '[%s] uid=%s display=%s xauthority=%s dbus=%s\n' \
-    "$(date -Is)" \
+    "$(iso_timestamp)" \
     "$USER_UID" \
     "${DISPLAY:-}" \
     "${XAUTHORITY:-}" \

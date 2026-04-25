@@ -7,6 +7,7 @@ import { t as s } from "./settings-content-layout-DQIQ2vPn.js";
 import { n as c } from "./settings-row-BG-yYlW7.js";
 import { n as l } from "./chevron-Oo-xHR0X.js";
 import { i as q, n as H, t as R } from "./check-md-YtZX6wSV.js";
+import { n as readLocalLlmConsoleFileRequest } from "./vscode-api-D-CkvzxH.js";
 import { u as u, y as d } from "./config-queries-jUrDLWnn.js";
 import { t as G } from "./settings-shared-DkvLL00j.js";
 import { o as Y } from "./use-model-settings-ldiRRtPt.js";
@@ -17,6 +18,7 @@ var p = e(n(), 1),
   g = [
     { value: `ollama`, label: `Ollama` },
     { value: `lmstudio`, label: `LM Studio` },
+    { value: `remote`, label: `Remote endpoint` },
     { value: `codex`, label: `Codex Cloud` },
   ],
   j = [
@@ -36,7 +38,8 @@ var p = e(n(), 1),
   P = [`gpt-oss:120b`, `qwen3.5:9.7b`, `qwen3.5:122b`],
   O = [`gpt-5.4`],
   $ = `codex-managed`,
-  ee = `tailscale-websocket`;
+  ee = `tailscale-websocket`,
+  remoteProviderId = `local_llm_console_remote`;
 
 function v(e, t = ``, n = ``) {
   return typeof e == `string` && e.trim().length > 0 ? e.trim() : t || n;
@@ -57,13 +60,15 @@ function x(e) {
 function z(e) {
   return e === `lmstudio`
     ? `lmstudio`
+    : e === `remote` || e === remoteProviderId
+      ? `remote`
     : e === `codex` || e === `openai`
       ? `codex`
       : `ollama`;
 }
 
 function B(e) {
-  return z(e) === `codex` ? O : P;
+  return z(e) === `codex` ? O : z(e) === `remote` ? [] : P;
 }
 
 function Q(e) {
@@ -71,7 +76,8 @@ function Q(e) {
 }
 
 function iee(e) {
-  return z(e) !== `codex`;
+  let t = z(e);
+  return t === `ollama` || t === `lmstudio`;
 }
 
 function deriveLocalCatalogPath(e, t = ``) {
@@ -100,6 +106,16 @@ function K(e, t) {
         : n;
 }
 
+function normalizeProviderModelForSelection(e, t) {
+  let n = z(e),
+    r = v(t, ``);
+  return n === `codex`
+    ? Q(n)
+    : n === `remote` && (r.length === 0 || O.includes(r))
+      ? Q(n)
+      : K(n, r);
+}
+
 function S(e, t = `443`) {
   if (typeof e == `number` && Number.isInteger(e) && e > 0) return String(e);
   if (typeof e == `string`) {
@@ -112,6 +128,24 @@ function S(e, t = `443`) {
 function stripWebsocketUrlScheme(e, t = ``) {
   let n = v(e, t);
   return n.replace(/^wss?:\/\//i, ``);
+}
+
+function escapeRegExp(e) {
+  return e.replace(/[.*+?^${}()|[\]\\]/g, `\\$&`);
+}
+
+function readTomlStringValue(e, t) {
+  let n = new RegExp(
+      `^\\s*${escapeRegExp(t)}\\s*=\\s*"((?:\\\\.|[^"\\\\])*)"`,
+      `m`,
+    ).exec(e),
+    r = n?.[1];
+  if (r == null) return ``;
+  try {
+    return JSON.parse(`"${r}"`).trim();
+  } catch {
+    return r.trim();
+  }
 }
 
 function C(e) {
@@ -128,6 +162,11 @@ function C(e) {
     model: K(t, e?.model),
     reasoning: v(e?.model_reasoning_effort, `medium`),
     catalogPath: v(e?.model_catalog_json, ``),
+    providerBaseUrl: v(
+      e?.local_llm_console_remote_provider_base_url,
+      e?.model_providers?.[remoteProviderId]?.base_url,
+      ``,
+    ),
     remoteTransport: N(e?.local_llm_console_remote_transport),
     remoteUrl: stripWebsocketUrlScheme(e?.local_llm_console_remote_url, ``),
     remoteAuthTokenEnv: v(e?.local_llm_console_remote_auth_token_env, ``),
@@ -150,6 +189,31 @@ function T(e, t) {
   return t != null && t.length > 0 && !B(e).includes(t)
     ? [{ value: t, label: `${t} (current)` }, ...n]
     : n;
+}
+
+function normalizeRemoteProviderBaseUrl(e) {
+  let t = v(e, ``);
+  if (t.length === 0) return ``;
+  /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(t) || (t = `http://${t}`);
+  let n;
+  try {
+    n = new URL(t);
+  } catch {
+    throw new Error(`Remote endpoint URL is invalid.`);
+  }
+  if (n.protocol !== `http:` && n.protocol !== `https:`)
+    throw new Error(`Remote endpoint URL is invalid.`);
+  return n.toString();
+}
+
+function deriveRemoteProviderApiBaseUrl(e) {
+  let t = new URL(e);
+  t.pathname = t.pathname.replace(/\/+$/u, ``);
+  if (t.pathname.endsWith(`/models`))
+    t.pathname = t.pathname.slice(0, -`/models`.length) || `/`;
+  t.search = ``;
+  t.hash = ``;
+  return t.toString();
 }
 
 function readLocalLlmConsoleSessionState() {
@@ -216,6 +280,33 @@ async function applyLocalLlmConsoleHostService(e = `reload`) {
         : `Unable to apply host settings immediately.`,
     );
   return n;
+}
+
+async function validateLocalOllamaSelection(e) {
+  if (z(e.provider) !== `ollama`) return;
+  let t;
+  try {
+    let e = await fetch(`http://127.0.0.1:11434/api/tags`, {
+      cache: `no-store`,
+      headers: { Accept: `application/json` },
+    });
+    if (!e.ok) throw new Error(`Ollama is not responding.`);
+    t = await e.json();
+  } catch {
+    throw new Error(`Ollama is not running locally. Start Ollama and install the selected model before switching.`);
+  }
+  let n = Array.isArray(t?.models)
+      ? t.models
+          .map((e) => (typeof e?.name == `string` ? e.name.trim() : ``))
+          .filter(Boolean)
+      : [],
+    r = v(e.model, ``);
+  if (r.length > 0 && !n.includes(r))
+    throw new Error(
+      n.length > 0
+        ? `Ollama model "${r}" is not installed locally.`
+        : `No Ollama models are installed locally.`,
+    );
 }
 
 function formatLocalLlmConsoleSessionLabel(e) {
@@ -475,6 +566,7 @@ function localSignature(e) {
     model: e.model,
     reasoning: e.reasoning,
     catalogPath: e.catalogPath,
+    providerBaseUrl: e.providerBaseUrl,
   });
 }
 
@@ -599,20 +691,31 @@ function RuntimeSettingsContent(props = {}) {
     ne = te === `remote`,
     { data: e, isLoading: n, refetch: r } = d(),
     i = u(),
-    t = (0, p.useMemo)(() => C(e?.config), [
-      e?.config?.local_llm_console_mode,
-      e?.config?.model_provider,
-      e?.config?.oss_provider,
-      e?.config?.model,
-      e?.config?.model_reasoning_effort,
-      e?.config?.model_catalog_json,
-      e?.config?.local_llm_console_remote_transport,
-      e?.config?.local_llm_console_remote_url,
-      e?.config?.local_llm_console_remote_auth_token_env,
-      e?.config?.local_llm_console_host_enabled,
-      e?.config?.local_llm_console_host_transport,
-      e?.config?.local_llm_console_host_listen_url,
-      e?.config?.local_llm_console_host_https_port,
+    [rawRemoteProviderBaseUrl, setRawRemoteProviderBaseUrl] = (0, p.useState)(null),
+    rawConfig = (0, p.useMemo)(() => {
+      if (rawRemoteProviderBaseUrl == null || rawRemoteProviderBaseUrl.length === 0)
+        return e?.config;
+      return {
+        ...(e?.config ?? {}),
+        local_llm_console_remote_provider_base_url: rawRemoteProviderBaseUrl,
+      };
+    }, [e?.config, rawRemoteProviderBaseUrl]),
+    t = (0, p.useMemo)(() => C(rawConfig), [
+      rawConfig?.local_llm_console_mode,
+      rawConfig?.model_provider,
+      rawConfig?.oss_provider,
+      rawConfig?.model,
+      rawConfig?.model_reasoning_effort,
+      rawConfig?.model_catalog_json,
+      rawConfig?.local_llm_console_remote_provider_base_url,
+      rawConfig?.model_providers?.[remoteProviderId]?.base_url,
+      rawConfig?.local_llm_console_remote_transport,
+      rawConfig?.local_llm_console_remote_url,
+      rawConfig?.local_llm_console_remote_auth_token_env,
+      rawConfig?.local_llm_console_host_enabled,
+      rawConfig?.local_llm_console_host_transport,
+      rawConfig?.local_llm_console_host_listen_url,
+      rawConfig?.local_llm_console_host_https_port,
     ]),
     [w, E] = (0, p.useState)(t),
     [D, U] = (0, p.useState)(null),
@@ -640,9 +743,10 @@ function RuntimeSettingsContent(props = {}) {
     fe = ne ? de : ue,
     pe =
       w.provider.trim().length === 0 ||
-      w.model.trim().length === 0 ||
+      (z(w.provider) !== `remote` && w.model.trim().length === 0) ||
       w.reasoning.trim().length === 0 ||
-      (iee(w.provider) && w.catalogPath.trim().length === 0),
+      (iee(w.provider) && w.catalogPath.trim().length === 0) ||
+      (z(w.provider) === `remote` && w.providerBaseUrl.trim().length === 0),
     me = !hasValidRemoteHostUrl(w.remoteUrl),
     he =
       w.hostListenUrl.trim().length === 0 ||
@@ -660,11 +764,19 @@ function RuntimeSettingsContent(props = {}) {
         K = n.hostAction ?? `reload`,
         isRemoteScope = n.scope === `remote`,
         a = W.provider.trim(),
-        providerValue = z(a) === `codex` ? `openai` : a,
+        normalizedProvider = z(a),
+        providerValue =
+          normalizedProvider === `codex`
+            ? `openai`
+            : normalizedProvider === `remote`
+              ? remoteProviderId
+              : a,
         o = W.model.trim(),
         s = W.reasoning.trim(),
         c = W.catalogPath.trim(),
-        includeCatalogPathEdit = z(a) !== `codex`,
+        includeCatalogPathEdit = iee(a),
+        providerBaseUrl = v(W.providerBaseUrl, ``),
+        providerApiBaseUrl = providerBaseUrl,
         l = `tailscale`,
         q = W.remoteUrl.trim(),
         H = W.remoteAuthTokenEnv.trim(),
@@ -673,21 +785,46 @@ function RuntimeSettingsContent(props = {}) {
         Y = R ? normalizeHostListenUrl(W.hostListenUrl) : v(W.hostListenUrl, ``),
         V = W.hostHttpsPort.trim(),
         I = Number.parseInt(V, 10);
+      !isRemoteScope &&
+        normalizedProvider === `codex` &&
+        (o.length === 0 || o.includes(`:`)) &&
+        (o = Q(normalizedProvider));
+      !isRemoteScope &&
+        normalizedProvider === `remote` &&
+        (o.length === 0 || O.includes(o)) &&
+        (o = Q(normalizedProvider));
       if (
         !isRemoteScope &&
         (a.length === 0 ||
-          o.length === 0 ||
+          (normalizedProvider !== `remote` && o.length === 0) ||
           s.length === 0 ||
-          (iee(a) && c.length === 0))
+          (iee(a) && c.length === 0) ||
+          (normalizedProvider === `remote` && providerBaseUrl.length === 0))
       ) {
         U({
           tone: `error`,
           text: iee(a)
             ? `Provider, model, reasoning effort, and catalog path are all required for local settings.`
+            : normalizedProvider === `remote`
+              ? `Provider, reasoning effort, and remote endpoint URL are all required for remote endpoint settings.`
             : `Provider, model, and reasoning effort are all required for Codex Cloud settings.`,
         });
         return !1;
       }
+      if (!isRemoteScope && normalizedProvider === `remote`)
+        try {
+          providerBaseUrl = normalizeRemoteProviderBaseUrl(providerBaseUrl);
+          providerApiBaseUrl = deriveRemoteProviderApiBaseUrl(providerBaseUrl);
+        } catch (e) {
+          U({
+            tone: `error`,
+            text:
+              e instanceof Error && e.message.trim().length > 0
+                ? e.message
+                : `Remote endpoint URL is invalid.`,
+          });
+          return !1;
+        }
       if (isRemoteScope && e === `remote` && !hasValidRemoteHostUrl(q)) {
         U({
           tone: `error`,
@@ -709,18 +846,29 @@ function RuntimeSettingsContent(props = {}) {
         });
         return !1;
       }
+      if (!isRemoteScope)
+        try {
+          await validateLocalOllamaSelection({
+            provider: a,
+            model: o,
+          });
+        } catch (e) {
+          U({
+            tone: `error`,
+            text:
+              e instanceof Error && e.message.trim().length > 0
+                ? e.message
+                : `Ollama is not available locally.`,
+          });
+          return !1;
+        }
       U({
         tone: `info`,
         text: n.savingText ?? `Saving runtime configuration...`,
       });
       try {
         let edits = [
-          { keyPath: `local_llm_console_provider`, value: a },
-          { keyPath: `model_provider`, value: providerValue },
-          { keyPath: `oss_provider`, value: providerValue },
-          { keyPath: `model`, value: o },
-          { keyPath: `model_reasoning_effort`, value: s },
-          { keyPath: `local_llm_console_mode`, value: `local` },
+          { keyPath: `local_llm_console_mode`, value: isRemoteScope ? b(e) : `local` },
           {
             keyPath: `local_llm_console_remote_transport`,
             value: l,
@@ -747,8 +895,36 @@ function RuntimeSettingsContent(props = {}) {
             value: I,
           },
         ];
-        includeCatalogPathEdit &&
-          edits.splice(5, 0, { keyPath: `model_catalog_json`, value: c });
+        if (!isRemoteScope) {
+          edits.unshift(
+            { keyPath: `local_llm_console_provider`, value: normalizedProvider },
+            { keyPath: `model_provider`, value: providerValue },
+            { keyPath: `oss_provider`, value: providerValue },
+            { keyPath: `model`, value: o },
+            { keyPath: `model_reasoning_effort`, value: s },
+            {
+              keyPath: `local_llm_console_remote_provider_base_url`,
+              value: providerBaseUrl,
+            },
+          );
+          includeCatalogPathEdit &&
+            edits.splice(5, 0, { keyPath: `model_catalog_json`, value: c });
+          normalizedProvider === `remote` &&
+            edits.push(
+              {
+                keyPath: `model_providers.${remoteProviderId}.name`,
+                value: `Remote endpoint`,
+              },
+              {
+                keyPath: `model_providers.${remoteProviderId}.base_url`,
+                value: providerApiBaseUrl,
+              },
+              {
+                keyPath: `model_providers.${remoteProviderId}.wire_api`,
+                value: `responses`,
+              },
+            );
+        }
         try {
           await i.mutateAsync({
             filePath: se || null,
@@ -888,6 +1064,7 @@ function RuntimeSettingsContent(props = {}) {
         model: t.model,
         reasoning: t.reasoning,
         catalogPath: ye.catalogPath,
+        providerBaseUrl: t.providerBaseUrl,
       }));
       oe(null);
       U({
@@ -1172,7 +1349,7 @@ function RuntimeSettingsContent(props = {}) {
                 children: [
                   (0, m.jsx)(c, {
                     label: `Provider`,
-                    description: `Used when this profile runs locally or through Codex Cloud.`,
+                    description: `Used when this profile runs locally, through a remote endpoint, or through Codex Cloud.`,
                     control: (0, m.jsx)(`div`, {
                       className: `w-[28rem] max-w-full`,
                       children: (0, m.jsx)(F, {
@@ -1185,28 +1362,31 @@ function RuntimeSettingsContent(props = {}) {
                             return {
                               ...t,
                               provider: n,
-                              model: K(n, t.model),
+                              model: normalizeProviderModelForSelection(n, t.model),
+                              reasoning: v(t.reasoning, `medium`),
                             };
                           });
                         },
                       }),
                     }),
                   }),
-                  (0, m.jsx)(c, {
-                    label: `Default model`,
-                    description: `The model ID used for the selected provider.`,
-                    control: (0, m.jsx)(`div`, {
-                      className: `w-[28rem] max-w-full`,
-                      children: (0, m.jsx)(F, {
-                        ariaLabel: `Default model`,
-                        options: le,
-                        value: w.model,
-                        onChange: (e) => {
-                          E((t) => ({ ...t, model: e }));
-                        },
+                  z(w.provider) === `remote`
+                    ? null
+                    : (0, m.jsx)(c, {
+                        label: `Default model`,
+                        description: `The model ID used for the selected provider.`,
+                        control: (0, m.jsx)(`div`, {
+                          className: `w-[28rem] max-w-full`,
+                          children: (0, m.jsx)(F, {
+                            ariaLabel: `Default model`,
+                            options: le,
+                            value: w.model,
+                            onChange: (e) => {
+                              E((t) => ({ ...t, model: e }));
+                            },
+                          }),
+                        }),
                       }),
-                    }),
-                  }),
                   (0, m.jsx)(c, {
                     label: `Reasoning effort`,
                     description: `Default reasoning effort for local runs launched from this desktop profile.`,
@@ -1228,18 +1408,35 @@ function RuntimeSettingsContent(props = {}) {
                 position: `middle`,
                 children: [
                   (0, m.jsx)(c, {
-                    label: `Model catalog path`,
-                    description: `Path to the JSON catalog used when this profile runs locally.`,
+                    label:
+                      z(w.provider) === `remote`
+                        ? `Remote endpoint URL`
+                        : `Model catalog path`,
+                    description:
+                      z(w.provider) === `remote`
+                        ? `Base URL for an OpenAI-compatible server on a remote host.`
+                        : `Path to the JSON catalog used when this profile runs locally.`,
                     control: (0, m.jsx)(`div`, {
                       className: `ml-5 w-[32rem] max-w-full`,
                       children: (0, m.jsx)(k, {
-                        value: w.catalogPath,
+                        value:
+                          z(w.provider) === `remote`
+                            ? w.providerBaseUrl
+                            : w.catalogPath,
                         disabled: z(w.provider) === `codex`,
                         onChange: (e) => {
                           let t = e.target.value;
-                          E((e) => ({ ...e, catalogPath: t }));
+                          E((e) => ({
+                            ...e,
+                            ...(z(e.provider) === `remote`
+                              ? { providerBaseUrl: t }
+                              : { catalogPath: t }),
+                          }));
                         },
-                        placeholder: `/home/you/.codex-local-desktop-models.json`,
+                        placeholder:
+                          z(w.provider) === `remote`
+                            ? `http://remote-host:11434/v1`
+                            : `/home/you/.codex-local-desktop-models.json`,
                       }),
                     }),
                   }),
@@ -1285,6 +1482,8 @@ function RuntimeSettingsContent(props = {}) {
                           tone: `error`,
                           text: iee(w.provider)
                             ? `Provider, model, reasoning effort, and catalog path are all required before saving local settings.`
+                            : z(w.provider) === `remote`
+                              ? `Provider, reasoning effort, and remote endpoint URL are all required before saving remote endpoint settings.`
                             : `Provider, model, and reasoning effort are all required before saving Codex Cloud settings.`,
                         })
                       : null,
@@ -1308,6 +1507,30 @@ function RuntimeSettingsContent(props = {}) {
   (0, p.useEffect)(() => {
     r().catch(() => {});
   }, []);
+
+  (0, p.useEffect)(() => {
+    let e = !1;
+    if (se.length === 0) {
+      setRawRemoteProviderBaseUrl(null);
+      return;
+    }
+    readLocalLlmConsoleFileRequest(`read-file`, { params: { path: se } })
+      .then((t) => {
+        if (e) return;
+        let n = readTomlStringValue(
+            typeof t?.contents == `string` ? t.contents : ``,
+            `local_llm_console_remote_provider_base_url`,
+          ),
+          r = n.length > 0 ? n : null;
+        setRawRemoteProviderBaseUrl((e) => (e === r ? e : r));
+      })
+      .catch(() => {
+        if (!e) setRawRemoteProviderBaseUrl(null);
+      });
+    return () => {
+      e = !0;
+    };
+  }, [se, ce]);
 
   (0, p.useEffect)(() => {
     let e = !1,

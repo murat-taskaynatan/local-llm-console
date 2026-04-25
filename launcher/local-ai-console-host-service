@@ -33,6 +33,8 @@ def normalize_provider(value: str) -> str:
     value = (value or "").strip().lower()
     if value in {"codex", "openai"}:
         return "codex"
+    if value in {"remote", "local_llm_console_remote"}:
+        return "remote"
     if value == "lmstudio":
         return "lmstudio"
     return "ollama"
@@ -40,6 +42,7 @@ def normalize_provider(value: str) -> str:
 
 model_match = re.search(r'(?m)^\s*model_provider\s*=\s*"([^"]*)"', text)
 oss_match = re.search(r'(?m)^\s*oss_provider\s*=\s*"([^"]*)"', text)
+model_value_match = re.search(r'(?m)^\s*model\s*=\s*"([^"]*)"', text)
 catalog_match = re.search(r'(?m)^\s*model_catalog_json\s*=\s*"([^"]*)"', text)
 alias_matches = re.findall(r'(?m)^\s*local_llm_console_provider\s*=\s*"([^"]*)"', text)
 
@@ -52,19 +55,33 @@ provider = normalize_provider(
         else (oss_match.group(1) if oss_match else "ollama")
     )
 )
-runtime_provider = "openai" if provider == "codex" else provider
 
 catalog_value = (catalog_match.group(1).strip() if catalog_match else "")
-if not catalog_value and provider != "codex":
+if not catalog_value and provider not in {"codex", "remote"}:
     parent = path.parent.parent
     suffix = path.parent.name
     catalog_value = str(parent / f"{suffix}-models.json")
+
+if provider not in {"codex", "remote"} and (not catalog_value or not Path(catalog_value).is_file()):
+    provider = "codex"
+    catalog_value = ""
+
+model_value = model_value_match.group(1).strip() if model_value_match else ""
+if provider == "codex" and (not model_value or ":" in model_value):
+    model_value = "gpt-5.4"
+
+runtime_provider = (
+    "openai"
+    if provider == "codex"
+    else ("local_llm_console_remote" if provider == "remote" else provider)
+)
 
 lines = text.splitlines()
 normalized = []
 have_model_provider = False
 have_oss_provider = False
 have_model_catalog = False
+have_model = False
 
 for line in lines:
     if re.match(r'^\s*local_llm_console_provider\s*=.*$', line):
@@ -77,8 +94,12 @@ for line in lines:
         normalized.append(f'oss_provider = "{runtime_provider}"')
         have_oss_provider = True
         continue
+    if re.match(r'^\s*model\s*=.*$', line):
+        normalized.append(f'model = "{model_value}"')
+        have_model = True
+        continue
     if re.match(r'^\s*model_catalog_json\s*=.*$', line):
-        if provider != "codex":
+        if provider not in {"codex", "remote"}:
             normalized.append(f'model_catalog_json = "{catalog_value}"')
             have_model_catalog = True
         continue
@@ -89,7 +110,13 @@ if not have_model_provider:
 if not have_oss_provider:
     insert_at = 1 if normalized and normalized[0].startswith("model_provider = ") else 0
     normalized.insert(insert_at, f'oss_provider = "{runtime_provider}"')
-if provider != "codex" and not have_model_catalog:
+if not have_model:
+    insert_at = 0
+    for index, line in enumerate(normalized):
+        if line.startswith("oss_provider = ") or line.startswith("model_provider = "):
+            insert_at = index + 1
+    normalized.insert(insert_at, f'model = "{model_value or "gpt-5.4"}"')
+if provider not in {"codex", "remote"} and not have_model_catalog:
     insert_at = 0
     for index, line in enumerate(normalized):
         if line.startswith("model_reasoning_effort = ") or line.startswith("model = "):
@@ -110,18 +137,36 @@ PY
 
 normalize_local_llm_console_config
 
-mapfile -t LOCAL_LLM_CONSOLE_HOST_CONFIG < <(
+LOCAL_LLM_CONSOLE_HOST_CONFIG="$(
   python3 - "$CONFIG_PATH" <<'PY'
 from pathlib import Path
+import re
 import sys
-import tomllib
 from urllib.parse import urlparse
 
 path = Path(sys.argv[1])
-config = {}
-if path.is_file():
-    with path.open("rb") as handle:
-        config = tomllib.load(handle)
+text = path.read_text(encoding="utf-8") if path.is_file() else ""
+
+
+def read_string(key, default=""):
+    match = re.search(rf'(?m)^\s*{re.escape(key)}\s*=\s*"([^"]*)"', text)
+    return match.group(1) if match else default
+
+
+def read_value(key, default=None):
+    match = re.search(rf'(?m)^\s*{re.escape(key)}\s*=\s*([^\n#]+)', text)
+    if not match:
+        return default
+    raw = match.group(1).strip()
+    if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2:
+        return raw[1:-1]
+    lowered = raw.lower()
+    if lowered in {"true", "false"}:
+        return lowered == "true"
+    try:
+        return int(raw)
+    except ValueError:
+        return raw
 
 
 def clean_string(value, default=""):
@@ -164,16 +209,18 @@ def normalize_ws_url(value, default):
 
 
 provider = clean_identifier(
-    config.get("local_llm_console_provider") or config.get("model_provider") or config.get("oss_provider"),
-    "ollama",
+    read_string("local_llm_console_provider")
+    or read_string("model_provider")
+    or read_string("oss_provider"),
+    "codex",
 )
-host_enabled = clean_bool(config.get("local_llm_console_host_enabled"))
-host_transport = clean_string(config.get("local_llm_console_host_transport"), "tailscale")
+host_enabled = clean_bool(read_value("local_llm_console_host_enabled"))
+host_transport = clean_string(read_value("local_llm_console_host_transport"), "tailscale")
 host_listen_url = normalize_ws_url(
-    config.get("local_llm_console_host_listen_url"),
+    read_value("local_llm_console_host_listen_url"),
     "ws://127.0.0.1:8765",
 )
-host_https_port = clean_port(config.get("local_llm_console_host_https_port"), 443)
+host_https_port = clean_port(read_value("local_llm_console_host_https_port"), 443)
 
 parsed = urlparse(host_listen_url)
 proxy_host = parsed.hostname or "127.0.0.1"
@@ -187,18 +234,26 @@ print(str(host_https_port))
 print(proxy_host)
 print(str(proxy_port))
 PY
-)
+)"
 
-HOST_ENABLED="${LOCAL_LLM_CONSOLE_HOST_CONFIG[0]:-off}"
-LOCAL_PROVIDER="${LOCAL_LLM_CONSOLE_HOST_CONFIG[1]:-ollama}"
-HOST_TRANSPORT="${LOCAL_LLM_CONSOLE_HOST_CONFIG[2]:-tailscale}"
-HOST_LISTEN_URL="${LOCAL_LLM_CONSOLE_HOST_CONFIG[3]:-ws://127.0.0.1:8765}"
-HOST_HTTPS_PORT="${LOCAL_LLM_CONSOLE_HOST_CONFIG[4]:-443}"
-HOST_PROXY_HOST="${LOCAL_LLM_CONSOLE_HOST_CONFIG[5]:-127.0.0.1}"
-HOST_PROXY_PORT="${LOCAL_LLM_CONSOLE_HOST_CONFIG[6]:-8765}"
+HOST_ENABLED="$(printf '%s\n' "$LOCAL_LLM_CONSOLE_HOST_CONFIG" | sed -n '1p')"
+LOCAL_PROVIDER="$(printf '%s\n' "$LOCAL_LLM_CONSOLE_HOST_CONFIG" | sed -n '2p')"
+HOST_TRANSPORT="$(printf '%s\n' "$LOCAL_LLM_CONSOLE_HOST_CONFIG" | sed -n '3p')"
+HOST_LISTEN_URL="$(printf '%s\n' "$LOCAL_LLM_CONSOLE_HOST_CONFIG" | sed -n '4p')"
+HOST_HTTPS_PORT="$(printf '%s\n' "$LOCAL_LLM_CONSOLE_HOST_CONFIG" | sed -n '5p')"
+HOST_PROXY_HOST="$(printf '%s\n' "$LOCAL_LLM_CONSOLE_HOST_CONFIG" | sed -n '6p')"
+HOST_PROXY_PORT="$(printf '%s\n' "$LOCAL_LLM_CONSOLE_HOST_CONFIG" | sed -n '7p')"
+
+HOST_ENABLED="${HOST_ENABLED:-off}"
+LOCAL_PROVIDER="${LOCAL_PROVIDER:-codex}"
+HOST_TRANSPORT="${HOST_TRANSPORT:-tailscale}"
+HOST_LISTEN_URL="${HOST_LISTEN_URL:-ws://127.0.0.1:8765}"
+HOST_HTTPS_PORT="${HOST_HTTPS_PORT:-443}"
+HOST_PROXY_HOST="${HOST_PROXY_HOST:-127.0.0.1}"
+HOST_PROXY_PORT="${HOST_PROXY_PORT:-8765}"
 
 log() {
-  printf '[%s] %s\n' "$(date -Is)" "$*" >>"$LOG_FILE"
+  printf '[%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*" >>"$LOG_FILE"
 }
 
 pid_is_alive() {

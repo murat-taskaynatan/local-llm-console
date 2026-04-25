@@ -17,6 +17,7 @@ WEBVIEW_SOURCE="$REPO_ROOT/webview"
 CODEX_STAGE_SCRIPT="$REPO_ROOT/scripts/stage-codex-runtime.sh"
 CODEX_HELPER_SOURCE="$REPO_ROOT/launcher/local-ai-console-codex"
 CODEX_CLI_WRAPPER_SOURCE="$REPO_ROOT/launcher/codex-local-desktop-cli"
+HOST_SERVICE_HELPER_SOURCE="$REPO_ROOT/launcher/local-ai-console-host-service"
 MACOS_LAUNCHER_PATH="Contents/MacOS/Codex"
 MACOS_BINARY_PATH="Contents/MacOS/Codex.bin"
 CLI_WRAPPER_RELATIVE="Contents/Resources/local-llm-console/bin/codex-local-desktop-cli"
@@ -105,11 +106,16 @@ install_bundled_helpers() {
 
     [ -f "$CODEX_HELPER_SOURCE" ] || error "Missing bundled Codex helper source: $CODEX_HELPER_SOURCE"
     [ -f "$CODEX_CLI_WRAPPER_SOURCE" ] || error "Missing Codex CLI wrapper source: $CODEX_CLI_WRAPPER_SOURCE"
+    [ -f "$HOST_SERVICE_HELPER_SOURCE" ] || error "Missing host service helper source: $HOST_SERVICE_HELPER_SOURCE"
 
     mkdir -p "$helper_dir"
     cp "$CODEX_HELPER_SOURCE" "$helper_dir/local-ai-console-codex"
     cp "$CODEX_CLI_WRAPPER_SOURCE" "$helper_dir/codex-local-desktop-cli"
-    chmod 755 "$helper_dir/local-ai-console-codex" "$helper_dir/codex-local-desktop-cli"
+    cp "$HOST_SERVICE_HELPER_SOURCE" "$helper_dir/local-ai-console-host-service"
+    chmod 755 \
+        "$helper_dir/local-ai-console-codex" \
+        "$helper_dir/codex-local-desktop-cli" \
+        "$helper_dir/local-ai-console-host-service"
 }
 
 install_model_catalog() {
@@ -163,6 +169,8 @@ export CODEX_HOME="\${CODEX_HOME:-\$HOME/.codex-local-desktop}"
 export LOCAL_LLM_CONSOLE_CONFIG_PATH="\${LOCAL_LLM_CONSOLE_CONFIG_PATH:-\$CODEX_HOME/config.toml}"
 export CODEX_CLI_PATH="\${CODEX_CLI_PATH:-\$APP_CONTENTS/Resources/local-llm-console/bin/codex-local-desktop-cli}"
 export CODEX_DESKTOP_RUNTIME_NAME="\${CODEX_DESKTOP_RUNTIME_NAME:-Local LLM Console}"
+export CODEX_ELECTRON_USER_DATA_PATH="\${CODEX_ELECTRON_USER_DATA_PATH:-\$HOME/Library/Application Support/Local LLM Console}"
+export LOCAL_LLM_CONSOLE_DISABLE_UPDATER="\${LOCAL_LLM_CONSOLE_DISABLE_UPDATER:-1}"
 export PATH="/opt/homebrew/bin:/usr/local/bin:\$PATH"
 
 mkdir -p "\$CODEX_HOME"
@@ -233,6 +241,49 @@ replace_optional(
 )
 replace_optional(
     bootstrap_bundle,
+    "n.app.setName(`Local LLM Console`),n.app.setPath(`userData`,_({appDataPath:n.app.getPath(`appData`),buildFlavor:x,env:process.env}))",
+    "n.app.setName(`Local LLM Console`),n.app.setPath(`userData`,process.env.CODEX_ELECTRON_USER_DATA_PATH?.trim()?r.resolve(process.env.CODEX_ELECTRON_USER_DATA_PATH.trim()):r.join(n.app.getPath(`appData`),`Local LLM Console`))",
+)
+replace_optional(
+    bootstrap_bundle,
+    "await i.initialize();try{let{runMainAppStartup:e}=await Promise.resolve().then(()=>require(`./main-DCRKtMoS.js`));await e()}",
+    "process.env.LOCAL_LLM_CONSOLE_DISABLE_UPDATER===`1`||await i.initialize();try{let{runMainAppStartup:e}=await Promise.resolve().then(()=>require(`./main-DCRKtMoS.js`));await e()}",
+)
+
+onboarding_login_bundle = root / "webview" / "assets" / "onboarding-login-content-4SqV_wbF.js"
+replace_optional(
+    onboarding_login_bundle,
+    "let L=a?null:(0,T.jsx)(v,{color:`secondary`,className:`w-full justify-center py-2.5`,onClick:()=>{typeof window<`u`&&typeof window.__continueLocalLLMConsoleWithoutChatGPT==`function`?window.__continueLocalLLMConsoleWithoutChatGPT():window.location.assign(`/`)},children:(0,T.jsx)(p,{id:`electron.onboarding.login.localOnly`,defaultMessage:`Continue without ChatGPT`,description:`Button label to continue into Local LLM Console without ChatGPT sign-in`})});",
+    "let L=(0,T.jsx)(v,{color:`secondary`,className:`w-full justify-center py-2.5`,onClick:()=>{typeof window<`u`&&typeof window.__continueLocalLLMConsoleWithoutChatGPT==`function`?window.__continueLocalLLMConsoleWithoutChatGPT():window.location.assign(`/`)},children:(0,T.jsx)(p,{id:`electron.onboarding.login.localOnly`,defaultMessage:`Continue without ChatGPT`,description:`Button label to continue into Local LLM Console without ChatGPT sign-in`})});",
+)
+app_routes_bundle = root / "webview" / "assets" / "index-CxBol07n.js"
+replace_optional(
+    app_routes_bundle,
+    "if(!t.authMethod&&t.requiresAuth&&!l)return`login`;",
+    "if(!t.authMethod&&t.requiresAuth&&!l){}",
+)
+replace_optional(
+    app_routes_bundle,
+    "if(!t.authMethod&&t.requiresAuth&&!l)return`app`;",
+    "if(!t.authMethod&&t.requiresAuth&&!l){}",
+)
+replace_optional(
+    app_routes_bundle,
+    "if(o||l)return`app`;",
+    "if(o)return`app`;",
+)
+replace_optional(
+    app_routes_bundle,
+    "if(t.isLoading)return null;",
+    "if(t.isLoading)return`app`;",
+)
+replace_optional(
+    app_routes_bundle,
+    "function Cpe(){let e=(0,Q.c)(24),t=wf(),n=x(),r=$f(),",
+    "function Cpe(){let e=(0,Q.c)(24),t=wf();if(t===`electron`)return (0,$.jsx)(p,{});let n=x(),r=$f(),",
+)
+replace_optional(
+    bootstrap_bundle,
     "message:`${t.app.getName()} failed to start.`",
     "message:`Local LLM Console failed to start.`",
 )
@@ -279,6 +330,11 @@ replace_optional(
     main_bundle,
     "r.setToolTip(t.app.getName())",
     "r.setToolTip(`Local LLM Console`)",
+)
+replace_optional(
+    main_bundle,
+    "se=async e=>{if(T){if(O=e,!e){Uw();return}await oe()}};",
+    "se=async e=>{};",
 )
 replace_optional(
     main_bundle,
@@ -332,6 +388,11 @@ replace_optional(
     "<title>Codex</title>",
     "<title>Local LLM Console</title>",
 )
+replace_optional(
+    runtime_webview_index,
+    '    <script src="./assets/local-ai-console-bootstrap.js?v=20260424c"></script>',
+    '    <script src="./assets/local-llm-console-tokens-per-second.js?v=20260425a"></script>\n    <script src="./assets/local-ai-console-bootstrap.js?v=20260424c"></script>',
+)
 
 runtime_index_bundle = next((root / "webview" / "assets").glob("index-*.js"), None)
 if runtime_index_bundle is None:
@@ -341,10 +402,101 @@ replace_optional(
     '"read-config":n9((e,t)=>e.readConfig(t)),"read-config-for-host":i9((e,{hostId:t,...n})=>e.sendRequest(`config/read`,n)),"refresh-remote-connection":async(e,{hostId:t})=>{',
     '"read-config":n9((e,t)=>e.readConfig(t)),"read-config-for-host":i9((e,{hostId:t,...n})=>e.sendRequest(`config/read`,n)),"refresh-remote-connections":async()=>Qe(`refresh-remote-connections`,{params:{}}),"refresh-remote-control-connections":async()=>Qe(`refresh-remote-control-connections`,{params:{}}),"save-codex-managed-remote-ssh-connections":async(e,t)=>Qe(`save-codex-managed-remote-ssh-connections`,{params:t??{}}),"set-remote-connection-auto-connect":async(e,t)=>Qe(`set-remote-connection-auto-connect`,{params:t??{}}),"refresh-remote-connection":async(e,{hostId:t})=>{',
 )
+replace_optional(
+    runtime_index_bundle,
+    "p=()=>{let e=Iye(t,{getActiveConversationId:()=>u(),getIsWindowFocused:()=>r.current,getTurnMode:()=>i,getPermissionsEnabled:()=>a,getQuestionsEnabled:()=>o});return()=>{e()}},m=[u,t,a,o,i,r]",
+    "p=()=>()=>{},m=[u,t,a,o,i,r]",
+)
+replace_optional(
+    runtime_index_bundle,
+    "function $T(){let e=(0,Q.c)(3),{authMethod:t,requiresAuth:n,isLoading:r}=$f();if(r){let t;return e[0]===Symbol.for(`react.memo_cache_sentinel`)?(t=(0,$.jsx)($.Fragment,{}),e[0]=t):t=e[0],t}if(t||!n){",
+    "function $T(){let e=(0,Q.c)(3),{authMethod:t,requiresAuth:n,isLoading:r}=$f();if(wf()===`electron`||r||t||!n){",
+)
+
+runtime_font_settings_bundle = next((root / "webview" / "assets").glob("font-settings-*.js"), None)
+if runtime_font_settings_bundle is None:
+    raise SystemExit("macOS dist patch failed: runtime font-settings bundle not found")
+replace_optional(
+    runtime_font_settings_bundle,
+    'import{f as E}from"./config-queries-jUrDLWnn.js";',
+    'import{f as E,y as LocalConfigQuery}from"./config-queries-jUrDLWnn.js";',
+)
+font_text = runtime_font_settings_bundle.read_text()
+if "LocalRemoteFetchBridge" not in font_text:
+    font_text = 'import{w as LocalRemoteFetchBridge}from"./vscode-api-D-CkvzxH.js";\n' + font_text
+font_anchor = "var Re=100,ze=[`models`,`list`];function Be(e,t,n=Re){return[...ze,e,t??`no-auth`,n]}"
+font_helpers = (
+    font_anchor
+    + "function LocalRemoteEnabled(e){return e?.local_llm_console_provider===`remote`||e?.model_provider===`local_llm_console_remote`||e?.oss_provider===`local_llm_console_remote`}"
+    + "function LocalRemoteReasoningEffort(e){return Ne.includes(e)?e:Me}"
+    + "function LocalRemoteBaseUrl(e){let t=typeof e?.local_llm_console_remote_provider_base_url==`string`?e.local_llm_console_remote_provider_base_url.trim():``,n=e?.model_providers?.local_llm_console_remote?.base_url;return t.length>0?t:typeof n==`string`?n.trim():``}"
+    + "function LocalRemoteModelsUrl(e){let t=LocalRemoteBaseUrl(e);if(t.length===0)return null;try{let n=new URL(t);return n.pathname=n.pathname.replace(/\\/+$/u,``),n.pathname.endsWith(`/models`)||(n.pathname=n.pathname.endsWith(`/v1`)?`${n.pathname}/models`:`${n.pathname}/v1/models`),n.search=``,n.hash=``,n.toString()}catch{return null}}"
+    + "function LocalRemoteSavedModel(e){let t=typeof e?.model==`string`?e.model.trim():``;return t.length>0?t:`gpt-oss:120b`}"
+    + "function LocalRemoteModelNames(e){let t=[],n=e?.data??e?.models??e;if(Array.isArray(n))for(let e of n){let n=typeof e==`string`?e:typeof e?.id==`string`?e.id:typeof e?.model==`string`?e.model:typeof e?.name==`string`?e.name:``;n=n.trim(),n.length>0&&t.push(n)}return[...new Set(t)]}"
+    + "async function LocalRemoteFetchCatalog(e){let t=LocalRemoteModelsUrl(e);if(t==null)return{localRemoteCatalog:!0,models:[],error:`Remote endpoint URL is missing.`};try{let n=await LocalRemoteFetchBridge.getInstance().get(t,{accept:`application/json`}),r=LocalRemoteModelNames(n?.body??n);return{localRemoteCatalog:!0,models:r,error:r.length===0?`Remote endpoint returned no models.`:null}}catch{return{localRemoteCatalog:!0,models:[],error:`Cannot reach remote endpoint.`}}}"
+    + "function LocalRemoteEfforts(e){let t=LocalRemoteReasoningEffort(e?.model_reasoning_effort);return{defaultReasoningEffort:t,supportedReasoningEfforts:Ne.map(e=>({reasoningEffort:e,description:`${e} effort`}))}}"
+    + "function LocalRemoteCatalogRecord(e,t,n){let r=LocalRemoteEfforts(t);return{model:e,displayName:e,description:`Remote endpoint model.`,...r,isDefault:n,hidden:!1}}"
+    + "function LocalRemoteUnavailableRecord(e,t,n){let r=LocalRemoteEfforts(e);return{model:LocalRemoteSavedModel(e),displayName:t,description:n,...r,isDefault:!0,hidden:!1,disabled:!0,localRemoteUnavailable:!0}}"
+    + "function LocalRemoteModelList(e,t){if(!LocalRemoteEnabled(e))return null;if(t?.localRemoteCatalog===!0){if(t.error)return{modelsByType:{models:[LocalRemoteUnavailableRecord(e,`Cannot reach remote endpoint`,t.error)]},defaultModel:null};let n=Array.isArray(t.models)?t.models:[];if(n.length===0)return{modelsByType:{models:[LocalRemoteUnavailableRecord(e,`No remote model available`, `Remote endpoint returned no models.`)]},defaultModel:null};let r=LocalRemoteSavedModel(e),i=n.map(t=>LocalRemoteCatalogRecord(t,e,t===r)),a=i.find(e=>e.model===r)??i[0]??null;return{modelsByType:{models:i},defaultModel:a}}return null}"
+)
+if "function LocalRemoteEnabled" not in font_text:
+    if font_anchor not in font_text:
+        raise SystemExit("macOS dist patch failed: font-settings model list anchor not found")
+    font_text = font_text.replace(font_anchor, font_helpers, 1)
+font_bridge_override = "LocalRemoteFetchCatalog=async function(e){let t=LocalRemoteModelsUrl(e);if(t==null)return{localRemoteCatalog:!0,models:[],error:`Remote endpoint URL is missing.`};try{let n=await LocalRemoteFetchBridge.getInstance().get(t,{accept:`application/json`}),r=LocalRemoteModelNames(n?.body??n);return{localRemoteCatalog:!0,models:r,error:r.length===0?`Remote endpoint returned no models.`:null}}catch{return{localRemoteCatalog:!0,models:[],error:`Cannot reach remote endpoint.`}}};"
+if font_bridge_override not in font_text:
+    font_text = font_text.replace("//# sourceMappingURL=", font_bridge_override + "\n//# sourceMappingURL=", 1)
+font_start = font_text.find("function Ve(e){")
+font_end = font_text.find("function He(e){", font_start)
+if font_start < 0 or font_end < 0:
+    raise SystemExit("macOS dist patch failed: font-settings model list function not found")
+if "LocalConfigQuery({hostId:n})" not in font_text[font_start:font_end]:
+    patched_font_model_query = (
+        "function Ve(e){let t=e?.hostId??s,n=e?.limit??Re,r=g(_),i=O(t),a=i?.authMethod??null,o=i?.isLoading??!1,c=Ie(),{data:l}=LocalConfigQuery({hostId:t}),u=l?.config??l,d=LocalRemoteEnabled(u),p=d?[...ze,t,`remote-endpoint`,LocalRemoteModelsUrl(u)??``,LocalRemoteSavedModel(u),u?.model_reasoning_effort??``]:Be(t,a,n),m=r.includes(t)&&!o,y=()=>d?LocalRemoteFetchCatalog(u):b(`list-models-for-host`,{hostId:t,includeHidden:!0,cursor:null,limit:n}),x=e=>{let t=LocalRemoteModelList(u,e);if(t)return t;let{data:n}=e,r={models:[]},i=null;return n.forEach(e=>{if(!e.hidden){let n=a===`copilot`?[e.supportedReasoningEfforts.find(He)??{reasoningEffort:`medium`,description:`medium effort`}]:[...e.supportedReasoningEfforts];r.models.push({...e,supportedReasoningEfforts:n}),i=e.isDefault?e:i}}),i??=r.models.find(e=>e.model===c.defaultModel)??null,{modelsByType:r,defaultModel:i}};return h({queryKey:p,enabled:m,staleTime:f.FIVE_MINUTES,queryFn:y,select:x})}"
+    )
+    font_text = font_text[:font_start] + patched_font_model_query + font_text[font_end:]
+runtime_font_settings_bundle.write_text(font_text)
+
+statsig_bundle = next((root / "webview" / "assets").glob("statsig-*.js"), None)
+if statsig_bundle is None:
+    raise SystemExit("macOS dist patch failed: Statsig bundle not found")
+replace_optional(
+    statsig_bundle,
+    "initializeSync(e){return this.loadingStatus===`Uninitialized`?(this._logger.start(),this.updateUserSync(this._user,e))",
+    "initializeSync(e){return this.loadingStatus===`Uninitialized`?this.updateUserSync(this._user,e)",
+)
+replace_optional(
+    statsig_bundle,
+    "_initializeAsyncImpl(e){return t(this,void 0,void 0,function*(){return n.Storage.isReady()||(yield n.Storage.isReadyResolver()),this._logger.start(),this.updateUserAsync(this._user,e)})}",
+    "_initializeAsyncImpl(e){return t(this,void 0,void 0,function*(){return n.Storage.isReady()||(yield n.Storage.isReadyResolver()),this.updateUserAsync(this._user,e)})}",
+)
+replace_optional(
+    statsig_bundle,
+    "logEvent(e,t,n){let r=typeof e==`string`?{eventName:e,value:t,metadata:n}:e;this.$emt({name:`log_event_called`,event:r}),this._logger.enqueue(Object.assign(Object.assign({},r),{user:this._user,time:Date.now()}))}",
+    "logEvent(e,t,n){}",
+)
+replace_optional(
+    statsig_bundle,
+    "_enqueueExposure(e,t,n){if(n?.disableExposureLog===!0){this._logger.incrementNonExposureCount(e);return}this._logger.enqueue(t)}",
+    "_enqueueExposure(e,t,n){}",
+)
+replace_optional(
+    statsig_bundle,
+    "_checkUserHasIdForEvaluation(e,t,r){e&&((0,n._getUnitIDFromUser)(this._user,e)||n.Log.warn(`The user does not have the required id_type \"${e}\" for ${r} \"${t}\"`))}",
+    "_checkUserHasIdForEvaluation(e,t,r){}",
+)
 
 runtime_local_models_bundle = next((root / "webview" / "assets").glob("local-models-settings-*.js"), None)
 if runtime_local_models_bundle is None:
     raise SystemExit("macOS dist patch failed: runtime local-models settings bundle not found")
+replace_optional(
+    runtime_local_models_bundle,
+    """import { i as q, n as H, t as R } from "./check-md-YtZX6wSV.js";
+import { u as u, y as d } from "./config-queries-jUrDLWnn.js";""",
+    """import { i as q, n as H, t as R } from "./check-md-YtZX6wSV.js";
+import { n as readLocalLlmConsoleFileRequest } from "./vscode-api-D-CkvzxH.js";
+import { u as u, y as d } from "./config-queries-jUrDLWnn.js";""",
+)
 replace_optional(
     runtime_local_models_bundle,
     """async function loadManagedRemoteSessionConnections() {
@@ -419,6 +571,421 @@ replace_optional(
     );
   return n;
 }""",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    """function Q(e) {
+  return z(e) === `codex` ? `gpt-5.4` : z(e) === `remote` ? `` : `gpt-oss:120b`;
+}""",
+    """function Q(e) {
+  return z(e) === `codex` ? `gpt-5.4` : `gpt-oss:120b`;
+}""",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    """function K(e, t) {
+  let n = v(t, ``),
+    r = B(e),
+    i = z(e) === `codex` ? P : O;
+  return n.length === 0
+    ? Q(e)
+    : r.includes(n)
+      ? n
+      : i.includes(n)
+        ? Q(e)
+        : n;
+}""",
+    """function K(e, t) {
+  let n = v(t, ``),
+    r = B(e),
+    i = z(e) === `codex` ? P : O;
+  return n.length === 0
+    ? Q(e)
+    : r.includes(n)
+      ? n
+      : i.includes(n)
+        ? Q(e)
+        : n;
+}
+
+function normalizeProviderModelForSelection(e, t) {
+  let n = z(e),
+    r = v(t, ``);
+  return n === `codex`
+    ? Q(n)
+    : n === `remote` && (r.length === 0 || O.includes(r))
+      ? Q(n)
+      : K(n, r);
+}""",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    """function stripWebsocketUrlScheme(e, t = ``) {
+  let n = v(e, t);
+  return n.replace(/^wss?:\/\//i, ``);
+}
+
+function C(e) {""",
+    """function stripWebsocketUrlScheme(e, t = ``) {
+  let n = v(e, t);
+  return n.replace(/^wss?:\/\//i, ``);
+}
+
+function escapeRegExp(e) {
+  return e.replace(/[.*+?^${}()|[\]\\]/g, `\\$&`);
+}
+
+function readTomlStringValue(e, t) {
+  let n = new RegExp(
+      `^\\s*${escapeRegExp(t)}\\s*=\\s*"((?:\\\\.|[^"\\\\])*)"`,
+      `m`,
+    ).exec(e),
+    r = n?.[1];
+  if (r == null) return ``;
+  try {
+    return JSON.parse(`"${r}"`).trim();
+  } catch {
+    return r.trim();
+  }
+}
+
+function C(e) {""",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    "    providerBaseUrl: v(e?.local_llm_console_remote_provider_base_url, ``),",
+    """    providerBaseUrl: v(
+      e?.local_llm_console_remote_provider_base_url,
+      e?.model_providers?.[remoteProviderId]?.base_url,
+      ``,
+    ),""",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    """    i = u(),
+    t = (0, p.useMemo)(() => C(e?.config), [
+      e?.config?.local_llm_console_mode,
+      e?.config?.model_provider,
+      e?.config?.oss_provider,
+      e?.config?.model,
+      e?.config?.model_reasoning_effort,
+      e?.config?.model_catalog_json,
+      e?.config?.local_llm_console_remote_provider_base_url,
+      e?.config?.local_llm_console_remote_transport,
+      e?.config?.local_llm_console_remote_url,
+      e?.config?.local_llm_console_remote_auth_token_env,
+      e?.config?.local_llm_console_host_enabled,
+      e?.config?.local_llm_console_host_transport,
+      e?.config?.local_llm_console_host_listen_url,
+      e?.config?.local_llm_console_host_https_port,
+    ]),""",
+    """    i = u(),
+    [rawRemoteProviderBaseUrl, setRawRemoteProviderBaseUrl] = (0, p.useState)(null),
+    rawConfig = (0, p.useMemo)(() => {
+      if (rawRemoteProviderBaseUrl == null || rawRemoteProviderBaseUrl.length === 0)
+        return e?.config;
+      return {
+        ...(e?.config ?? {}),
+        local_llm_console_remote_provider_base_url: rawRemoteProviderBaseUrl,
+      };
+    }, [e?.config, rawRemoteProviderBaseUrl]),
+    t = (0, p.useMemo)(() => C(rawConfig), [
+      rawConfig?.local_llm_console_mode,
+      rawConfig?.model_provider,
+      rawConfig?.oss_provider,
+      rawConfig?.model,
+      rawConfig?.model_reasoning_effort,
+      rawConfig?.model_catalog_json,
+      rawConfig?.local_llm_console_remote_provider_base_url,
+      rawConfig?.model_providers?.[remoteProviderId]?.base_url,
+      rawConfig?.local_llm_console_remote_transport,
+      rawConfig?.local_llm_console_remote_url,
+      rawConfig?.local_llm_console_remote_auth_token_env,
+      rawConfig?.local_llm_console_host_enabled,
+      rawConfig?.local_llm_console_host_transport,
+      rawConfig?.local_llm_console_host_listen_url,
+      rawConfig?.local_llm_console_host_https_port,
+    ]),""",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    """  (0, p.useEffect)(() => {
+    r().catch(() => {});
+  }, []);
+
+  (0, p.useEffect)(() => {
+    let e = !1,""",
+    """  (0, p.useEffect)(() => {
+    r().catch(() => {});
+  }, []);
+
+  (0, p.useEffect)(() => {
+    let e = !1;
+    if (se.length === 0) {
+      setRawRemoteProviderBaseUrl(null);
+      return;
+    }
+    readLocalLlmConsoleFileRequest(`read-file`, { params: { path: se } })
+      .then((t) => {
+        if (e) return;
+        let n = readTomlStringValue(
+            typeof t?.contents == `string` ? t.contents : ``,
+            `local_llm_console_remote_provider_base_url`,
+          ),
+          r = n.length > 0 ? n : null;
+        setRawRemoteProviderBaseUrl((e) => (e === r ? e : r));
+      })
+      .catch(() => {
+        if (!e) setRawRemoteProviderBaseUrl(null);
+      });
+    return () => {
+      e = !0;
+    };
+  }, [se, ce]);
+
+  (0, p.useEffect)(() => {
+    let e = !1,""",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    """  if (n.protocol !== `http:` && n.protocol !== `https:`)
+    throw new Error(`Remote endpoint URL is invalid.`);
+  return n.toString();
+}""",
+    """  if (n.protocol !== `http:` && n.protocol !== `https:`)
+    throw new Error(`Remote endpoint URL is invalid.`);
+  return n.toString();
+}
+
+function deriveRemoteProviderApiBaseUrl(e) {
+  let t = new URL(e);
+  t.pathname = t.pathname.replace(/\\/+$/u, ``);
+  if (t.pathname.endsWith(`/models`))
+    t.pathname = t.pathname.slice(0, -`/models`.length) || `/`;
+  t.search = ``;
+  t.hash = ``;
+  return t.toString();
+}""",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    """                              provider: n,
+                              model: K(n, t.model),
+                            };""",
+    """                              provider: n,
+                              model: normalizeProviderModelForSelection(n, t.model),
+                              reasoning: v(t.reasoning, `medium`),
+                            };""",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    """                  (0, m.jsx)(c, {
+                    label: `Default model`,
+                    description:
+                      z(w.provider) === `remote`
+                        ? `The model ID exposed by the remote OpenAI-compatible endpoint.`
+                        : `The model ID used for the selected provider.`,
+                    control: (0, m.jsx)(`div`, {
+                      className: `w-[28rem] max-w-full`,
+                      children:
+                        z(w.provider) === `remote`
+                          ? (0, m.jsx)(k, {
+                              value: w.model,
+                              onChange: (e) => {
+                                let t = e.target.value;
+                                E((e) => ({ ...e, model: t }));
+                              },
+                              placeholder: `gpt-oss:120b`,
+                            })
+                          : (0, m.jsx)(F, {
+                              ariaLabel: `Default model`,
+                              options: le,
+                              value: w.model,
+                              onChange: (e) => {
+                                E((t) => ({ ...t, model: e }));
+                              },
+                            }),
+                    }),
+                  }),""",
+    """                  z(w.provider) === `remote`
+                    ? null
+                    : (0, m.jsx)(c, {
+                        label: `Default model`,
+                        description: `The model ID used for the selected provider.`,
+                        control: (0, m.jsx)(`div`, {
+                          className: `w-[28rem] max-w-full`,
+                          children: (0, m.jsx)(F, {
+                            ariaLabel: `Default model`,
+                            options: le,
+                            value: w.model,
+                            onChange: (e) => {
+                              E((t) => ({ ...t, model: e }));
+                            },
+                          }),
+                        }),
+                      }),""",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    """        V = W.hostHttpsPort.trim(),
+        I = Number.parseInt(V, 10);
+      if (""",
+    """        V = W.hostHttpsPort.trim(),
+        I = Number.parseInt(V, 10);
+      !isRemoteScope &&
+        normalizedProvider === `codex` &&
+        (o.length === 0 || o.includes(`:`)) &&
+        (o = Q(normalizedProvider));
+      !isRemoteScope &&
+        normalizedProvider === `remote` &&
+        (o.length === 0 || O.includes(o)) &&
+        (o = Q(normalizedProvider));
+      if (""",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    "      w.model.trim().length === 0 ||",
+    "      (z(w.provider) !== `remote` && w.model.trim().length === 0) ||",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    "          o.length === 0 ||",
+    "          (normalizedProvider !== `remote` && o.length === 0) ||",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    "`Provider, model, reasoning effort, and remote endpoint URL are all required for remote endpoint settings.`",
+    "`Provider, reasoning effort, and remote endpoint URL are all required for remote endpoint settings.`",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    "`Provider, model, reasoning effort, and remote endpoint URL are all required before saving remote endpoint settings.`",
+    "`Provider, reasoning effort, and remote endpoint URL are all required before saving remote endpoint settings.`",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    "        providerBaseUrl = v(W.providerBaseUrl, ``),\n        l = `tailscale`,",
+    "        providerBaseUrl = v(W.providerBaseUrl, ``),\n        providerApiBaseUrl = providerBaseUrl,\n        l = `tailscale`,",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    "          providerBaseUrl = normalizeRemoteProviderBaseUrl(providerBaseUrl);",
+    "          providerBaseUrl = normalizeRemoteProviderBaseUrl(providerBaseUrl);\n          providerApiBaseUrl = deriveRemoteProviderApiBaseUrl(providerBaseUrl);",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    """        let edits = [
+          { keyPath: `local_llm_console_provider`, value: a },
+          { keyPath: `model_provider`, value: providerValue },
+          { keyPath: `oss_provider`, value: providerValue },
+          { keyPath: `model`, value: o },
+          { keyPath: `model_reasoning_effort`, value: s },
+          {
+            keyPath: `local_llm_console_remote_provider_base_url`,
+            value: providerBaseUrl,
+          },
+          { keyPath: `local_llm_console_mode`, value: `local` },
+          {
+            keyPath: `local_llm_console_remote_transport`,
+            value: l,
+          },
+          { keyPath: `local_llm_console_remote_url`, value: q },
+          {
+            keyPath: `local_llm_console_remote_auth_token_env`,
+            value: H,
+          },
+          {
+            keyPath: `local_llm_console_host_enabled`,
+            value: R,
+          },
+          {
+            keyPath: `local_llm_console_host_transport`,
+            value: G,
+          },
+          {
+            keyPath: `local_llm_console_host_listen_url`,
+            value: Y,
+          },
+          {
+            keyPath: `local_llm_console_host_https_port`,
+            value: I,
+          },
+        ];
+        includeCatalogPathEdit &&
+          edits.splice(5, 0, { keyPath: `model_catalog_json`, value: c });
+        normalizedProvider === `remote` &&
+          edits.push(
+            {
+              keyPath: `model_providers.${remoteProviderId}.name`,
+              value: `Remote endpoint`,
+            },
+            {
+              keyPath: `model_providers.${remoteProviderId}.base_url`,
+              value: providerBaseUrl,
+            },
+            {
+              keyPath: `model_providers.${remoteProviderId}.wire_api`,
+              value: `responses`,
+            },
+          );""",
+    """        let edits = [
+          { keyPath: `local_llm_console_mode`, value: isRemoteScope ? b(e) : `local` },
+          {
+            keyPath: `local_llm_console_remote_transport`,
+            value: l,
+          },
+          { keyPath: `local_llm_console_remote_url`, value: q },
+          {
+            keyPath: `local_llm_console_remote_auth_token_env`,
+            value: H,
+          },
+          {
+            keyPath: `local_llm_console_host_enabled`,
+            value: R,
+          },
+          {
+            keyPath: `local_llm_console_host_transport`,
+            value: G,
+          },
+          {
+            keyPath: `local_llm_console_host_listen_url`,
+            value: Y,
+          },
+          {
+            keyPath: `local_llm_console_host_https_port`,
+            value: I,
+          },
+        ];
+        if (!isRemoteScope) {
+          edits.unshift(
+            { keyPath: `local_llm_console_provider`, value: normalizedProvider },
+            { keyPath: `model_provider`, value: providerValue },
+            { keyPath: `oss_provider`, value: providerValue },
+            { keyPath: `model`, value: o },
+            { keyPath: `model_reasoning_effort`, value: s },
+            {
+              keyPath: `local_llm_console_remote_provider_base_url`,
+              value: providerBaseUrl,
+            },
+          );
+          includeCatalogPathEdit &&
+            edits.splice(5, 0, { keyPath: `model_catalog_json`, value: c });
+          normalizedProvider === `remote` &&
+            edits.push(
+              {
+                keyPath: `model_providers.${remoteProviderId}.name`,
+                value: `Remote endpoint`,
+              },
+              {
+                keyPath: `model_providers.${remoteProviderId}.base_url`,
+                value: providerApiBaseUrl,
+              },
+              {
+                keyPath: `model_providers.${remoteProviderId}.wire_api`,
+                value: `responses`,
+              },
+            );
+        }""",
 )
 PY
 
@@ -496,6 +1063,16 @@ package_zip() {
     )
 }
 
+prepare_local_launch() {
+    local app_bundle_path="$1"
+
+    xattr -cr "$app_bundle_path" 2>/dev/null || true
+    if command -v codesign >/dev/null 2>&1; then
+        codesign --force --deep --sign - "$app_bundle_path" >/dev/null 2>&1 || \
+            warn "Unable to ad-hoc sign app bundle; macOS may require right-click Open."
+    fi
+}
+
 verify_bundle() {
     APP_BUNDLE_PATH="$APP_BUNDLE_PATH" python3 - <<'PY'
 from pathlib import Path
@@ -537,6 +1114,7 @@ main() {
 
     info "Preparing Local LLM Console app bundle"
     prepare_bundle "$extracted_app"
+    prepare_local_launch "$APP_BUNDLE_PATH"
 
     info "Creating zip artifact"
     package_zip

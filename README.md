@@ -121,6 +121,7 @@ The desktop file expects `local-ai-console-launch` to be available on `PATH`, an
 The generated app supports:
 
 - Local providers such as Ollama and LM Studio
+- A remote OpenAI-compatible endpoint provider for models hosted on another machine
 - Codex Cloud as a cloud provider option inside the same app
 
 The included local model catalog is configured for local Ollama models.
@@ -132,6 +133,8 @@ codex --disable plugins -c 'model_provider="ollama"'
 ```
 
 If you switch the provider to `Codex Cloud`, Local LLM Console uses the bundled Codex runtime to connect to the cloud path from inside this app. You need to be signed in with a valid OpenAI/Codex account session in Local LLM Console. You do not need a separate Codex Desktop installation or a separate Codex app window kept open.
+
+If you switch the provider to `Remote endpoint`, Local LLM Console keeps the project running on the current machine but sends model traffic to an OpenAI-compatible endpoint on another host. In `Settings` -> `Runtime`, choose `Remote endpoint`, set the model ID exposed by that server, and enter the remote base URL such as `http://your-host:11434/v1`.
 
 ## Remote Host Sessions
 
