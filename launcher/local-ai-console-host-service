@@ -82,9 +82,20 @@ have_model_provider = False
 have_oss_provider = False
 have_model_catalog = False
 have_model = False
+current_section = None
 
 for line in lines:
+    section_match = re.match(r'^\s*\[([^\]]+)\]\s*(?:#.*)?$', line)
+    if section_match:
+        current_section = section_match.group(1).strip()
+        normalized.append(line)
+        continue
     if re.match(r'^\s*local_llm_console_provider\s*=.*$', line):
+        continue
+    if (
+        current_section == "model_providers.local_llm_console_remote"
+        and re.match(r'^\s*wire_api\s*=.*$', line)
+    ):
         continue
     if re.match(r'^\s*model_provider\s*=.*$', line):
         normalized.append(f'model_provider = "{runtime_provider}"')

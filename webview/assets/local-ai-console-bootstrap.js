@@ -1,6 +1,5 @@
 (() => {
   const SETTINGS_PATH = `/settings/general-settings`;
-  const LOCAL_ONLY_AUTH_KEY = `local-llm-console.continue-without-chatgpt`;
   const SESSION_STATE_PATH = `/__local-llm-console/state`;
   const SESSION_MODE_PATH = `/__local-llm-console/session-mode`;
   const SESSION_STATE_EVENT = `local-llm-console-state`;
@@ -62,16 +61,6 @@
     }
     window.history.pushState({}, ``, nextPath);
     window.dispatchEvent(new PopStateEvent(`popstate`));
-  }
-
-  function continueWithoutChatGPT() {
-    try {
-      window.localStorage?.setItem(LOCAL_ONLY_AUTH_KEY, `true`);
-    } catch (error) {
-      console.error(error);
-    }
-
-    window.location.assign(`/`);
   }
 
   function normalizeMode(value) {
@@ -233,105 +222,10 @@
     target.remove();
   }
 
-  function findLoginActionContainer(root = document) {
-    if (root == null || typeof root.querySelectorAll !== `function`) {
-      return null;
-    }
-
-    const buttons = Array.from(root.querySelectorAll(`button`));
-    for (const button of buttons) {
-      const text = normalizeText(button.textContent);
-      if (!text) {
-        continue;
-      }
-      if (text === `Continue with ChatGPT` || text === `Cancel sign-in` || text === `Enter API key`) {
-        const container = button.parentElement;
-        if (container instanceof HTMLElement) {
-          return container;
-        }
-      }
-    }
-
-    return null;
-  }
-
-  function createLocalOnlyButton() {
-    const button = document.createElement(`button`);
-    button.type = `button`;
-    button.dataset.localOnlyAuthButton = `true`;
-    button.textContent = `Continue without ChatGPT`;
-    button.className = `w-full justify-center py-2.5`;
-    button.style.display = `inline-flex`;
-    button.style.alignItems = `center`;
-    button.style.justifyContent = `center`;
-    button.style.width = `100%`;
-    button.style.borderRadius = `0.75rem`;
-    button.style.border = `1px solid rgba(0,0,0,0.12)`;
-    button.style.padding = `0.75rem 1rem`;
-    button.style.background = `rgba(255,255,255,0.92)`;
-    button.style.color = `#111827`;
-    button.style.font = `inherit`;
-    button.style.fontWeight = `500`;
-    button.style.cursor = `pointer`;
-    button.style.boxSizing = `border-box`;
-    button.addEventListener(`click`, () => {
-      continueWithoutChatGPT();
-    });
-    return button;
-  }
-
-  function ensureFloatingLocalOnlyButton() {
-    const onLoginRoute = window.location.pathname === `/login`;
-    let button = document.querySelector(`[data-local-only-auth-floating="true"]`);
-
-    if (!onLoginRoute) {
-      if (button instanceof HTMLElement) {
-        button.remove();
-      }
-      return;
-    }
-
-    if (!(button instanceof HTMLButtonElement)) {
-      button = createLocalOnlyButton();
-      button.dataset.localOnlyAuthFloating = `true`;
-      button.dataset.localOnlyAuthButton = `false`;
-      button.style.position = `fixed`;
-      button.style.left = `50%`;
-      button.style.bottom = `24px`;
-      button.style.transform = `translateX(-50%)`;
-      button.style.zIndex = `2147483647`;
-      button.style.width = `min(320px, calc(100vw - 32px))`;
-      button.style.boxShadow = `0 12px 32px rgba(0,0,0,0.22)`;
-      button.style.background = `#ffffff`;
-      button.style.border = `1px solid rgba(17,24,39,0.14)`;
-      document.body.appendChild(button);
-    }
-
-    button.style.display = `inline-flex`;
-  }
-
-  function ensureLocalOnlyLoginButton(root = document) {
-    const actionContainer = findLoginActionContainer(root);
-    if (!(actionContainer instanceof HTMLElement)) {
-      ensureFloatingLocalOnlyButton();
-      return;
-    }
-
-    let button = actionContainer.querySelector(`[data-local-only-auth-button="true"]`);
-    if (!(button instanceof HTMLButtonElement)) {
-      button = createLocalOnlyButton();
-      actionContainer.appendChild(button);
-    }
-
-    button.style.display = `inline-flex`;
-    ensureFloatingLocalOnlyButton();
-  }
-
   function scanNode(node) {
     if (!(node instanceof Element)) {
       return;
     }
-    ensureLocalOnlyLoginButton(node);
     if (isAnnouncementText(node.textContent)) {
       suppressAnnouncement(node);
       return;
@@ -341,7 +235,6 @@
         suppressAnnouncement(candidate);
       }
     }
-    ensureLocalOnlyLoginButton(node);
   }
 
   function startObserver() {
@@ -363,8 +256,6 @@
     });
 
     scanNode(document.body);
-    ensureLocalOnlyLoginButton(document);
-    ensureFloatingLocalOnlyButton();
     observer.observe(document.documentElement, {
       childList: true,
       characterData: true,
@@ -372,10 +263,6 @@
     });
     window.setTimeout(() => scanNode(document.body), 250);
     window.setTimeout(() => scanNode(document.body), 1000);
-    window.setTimeout(() => ensureLocalOnlyLoginButton(document), 250);
-    window.setTimeout(() => ensureLocalOnlyLoginButton(document), 1000);
-    window.setTimeout(() => ensureFloatingLocalOnlyButton(), 250);
-    window.setTimeout(() => ensureFloatingLocalOnlyButton(), 1000);
   }
 
   function showStandaloneBrowserFallback() {
@@ -405,7 +292,6 @@
   }
 
   window.__openLocalSettings = openLocalSettings;
-  window.__continueLocalLLMConsoleWithoutChatGPT = continueWithoutChatGPT;
   window.__getLocalLLMConsoleState = getSessionState;
   window.__isLocalLLMConsoleRemoteConnected = isRemoteConnected;
   window.__refreshLocalLLMConsoleState = refreshSessionState;

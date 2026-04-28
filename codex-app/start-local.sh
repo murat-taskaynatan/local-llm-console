@@ -335,13 +335,13 @@ replace_once(
 replace_once(
     main_bundle,
     "throw Error(`Sign in to ChatGPT in Codex Desktop to ${e}.`)",
-    "throw Error(`Sign in to Local LLM Console to ${e}.`)",
+    "throw Error(`Sign in to ChatGPT in Codex Desktop to ${e}.`)",
     error_message="Local desktop runtime patch failed: desktop auth sign-in snippet not found",
 )
 replace_once(
     main_bundle,
     "function xr(e){return`Sign in to ChatGPT in Codex Desktop to ${e}.`}",
-    "function xr(e){return`Sign in to Local LLM Console to ${e}.`}",
+    "function xr(e){return`Sign in to ChatGPT in Codex Desktop to ${e}.`}",
     error_message="Local desktop runtime patch failed: desktop auth helper snippet not found",
 )
 replace_once(
@@ -640,15 +640,21 @@ replace_once(
 )
 replace_once(
     runtime_index_bundle,
-    "De=n??(0,$.jsx)(yh,{tooltipContent:(0,$.jsx)(Y,{id:`codex.header.settingsTooltip`,defaultMessage:`Settings`,description:`Tooltip text for opening settings`}),children:(0,$.jsx)(xp,{color:`ghost`,size:`icon`,children:(0,$.jsx)(Zm,{className:`icon-xs`})})})",
     "De=n??(0,$.jsx)(yh,{tooltipContent:(0,$.jsx)(Y,{id:`codex.header.settingsTooltip`,defaultMessage:`Settings`,description:`Tooltip text for opening settings`}),children:(0,$.jsx)(xp,{color:`ghost`,size:`icon`,onClick:()=>{a(!1),o(`/settings/general-settings`,{state:W})},children:(0,$.jsx)(Zm,{className:`icon-xs`})})})",
+    "De=n??(0,$.jsx)(yh,{tooltipContent:(0,$.jsx)(Y,{id:`codex.header.settingsTooltip`,defaultMessage:`Settings`,description:`Tooltip text for opening settings`}),children:(0,$.jsx)(xp,{color:`ghost`,size:`icon`,children:(0,$.jsx)(Zm,{className:`icon-xs`})})})",
     error_message="Local desktop runtime patch failed: settings header trigger snippet not found",
 )
 replace_once(
     runtime_index_bundle,
-    "function uw(){let e=(0,Q.c)(23),{authMethod:t,planAtLogin:n}=$f(),{data:r}=Xi(),{data:i}=Ji(),a=t===`chatgpt`,o;",
+    "function uw(){let e=(0,Q.c)(23),{authMethod:t,planAtLogin:n}=$f(),{data:r}=Xi(),{data:i}=Ji(),a=t===`chatgpt`,o,N=d();",
     "function uw(){let e=(0,Q.c)(23),{authMethod:t,planAtLogin:n}=$f(),{data:r}=Xi(),{data:i}=Ji(),a=t===`chatgpt`,o,N=d();",
     error_message="Local desktop runtime patch failed: settings footer function snippet not found",
+)
+replace_once(
+    runtime_index_bundle,
+    "let C;e[15]===b?C=e[16]:(C=(0,$.jsx)(`div`,{className:`min-w-0 flex-1`,children:(0,$.jsx)(Ky,{icon:b,label:x,onClick:()=>{N(`/settings/general-settings`)},trailing:S,iconClassName:`icon-sm`})}),e[15]=b,e[16]=C);",
+    "let C;e[15]===b?C=e[16]:(C=(0,$.jsx)(sw,{triggerButton:(0,$.jsx)(Ky,{icon:b,label:x,trailing:S,iconClassName:`icon-sm`})}),e[15]=b,e[16]=C);",
+    error_message="Local desktop runtime patch failed: settings footer menu trigger snippet not found",
 )
 replace_once(
     runtime_index_bundle,
@@ -659,19 +665,19 @@ replace_once(
 replace_once(
     runtime_index_bundle,
     "children:(0,$.jsx)(sw,{triggerButton:(0,$.jsx)(Ky,{icon:b,label:x,onClick:dw,trailing:S,iconClassName:`icon-sm`})})",
-    "children:(0,$.jsx)(Ky,{icon:b,label:x,onClick:()=>{N(`/settings/general-settings`)},trailing:S,iconClassName:`icon-sm`})",
+    "children:(0,$.jsx)(sw,{triggerButton:(0,$.jsx)(Ky,{icon:b,label:x,onClick:dw,trailing:S,iconClassName:`icon-sm`})})",
     error_message="Local desktop runtime patch failed: settings footer dropdown snippet not found",
 )
 replace_once(
     runtime_index_bundle,
+    "let Ue;return t[145]!==i||t[146]!==a||t[147]!==Ee||t[148]!==De||t[149]!==Oe||t[150]!==He?(Ue=(0,$.jsx)(`div`,{className:`contents`,children:De}),t[145]=i,t[146]=a,t[147]=Ee,t[148]=De,t[149]=Oe,t[150]=He,t[151]=Ue):Ue=t[151],Ue",
     "Ue=(0,$.jsxs)(dh,{open:i,onOpenChange:a,contentWidth:Ee,triggerButton:De,children:[Oe,He]})",
-    "Ue=(0,$.jsx)(`div`,{className:`contents`,children:De})",
     error_message="Local desktop runtime patch failed: settings header dropdown snippet not found",
 )
 replace_once(
     runtime_index_bundle,
     "Ne=()=>{a(!1),E.dispatchMessage(`show-settings`,{section:Tg})}",
-    "Ne=()=>{a(!1),o(`/settings/general-settings`,{state:W})}",
+    "Ne=()=>{a(!1),E.dispatchMessage(`show-settings`,{section:Tg})}",
     error_message="Local desktop runtime patch failed: extension settings action snippet not found",
 )
 replace_once(
@@ -1299,12 +1305,16 @@ patch_text_file(
             "",
         ),
         (
-            "De=n??(0,$.jsx)(yh,{tooltipContent:(0,$.jsx)(Y,{id:`codex.header.settingsTooltip`,defaultMessage:`Settings`,description:`Tooltip text for opening settings`}),children:(0,$.jsx)(xp,{color:`ghost`,size:`icon`,children:(0,$.jsx)(Zm,{className:`icon-xs`})})})",
             "De=n??(0,$.jsx)(yh,{tooltipContent:(0,$.jsx)(Y,{id:`codex.header.settingsTooltip`,defaultMessage:`Settings`,description:`Tooltip text for opening settings`}),children:(0,$.jsx)(xp,{color:`ghost`,size:`icon`,onClick:()=>{a(!1),o(`/settings/general-settings`,{state:W})},children:(0,$.jsx)(Zm,{className:`icon-xs`})})})",
+            "De=n??(0,$.jsx)(yh,{tooltipContent:(0,$.jsx)(Y,{id:`codex.header.settingsTooltip`,defaultMessage:`Settings`,description:`Tooltip text for opening settings`}),children:(0,$.jsx)(xp,{color:`ghost`,size:`icon`,children:(0,$.jsx)(Zm,{className:`icon-xs`})})})",
         ),
         (
-            "function uw(){let e=(0,Q.c)(23),{authMethod:t,planAtLogin:n}=$f(),{data:r}=Xi(),{data:i}=Ji(),a=t===`chatgpt`,o;",
             "function uw(){let e=(0,Q.c)(23),{authMethod:t,planAtLogin:n}=$f(),{data:r}=Xi(),{data:i}=Ji(),a=t===`chatgpt`,o,N=d();",
+            "function uw(){let e=(0,Q.c)(23),{authMethod:t,planAtLogin:n}=$f(),{data:r}=Xi(),{data:i}=Ji(),a=t===`chatgpt`,o,N=d();",
+        ),
+        (
+            "let C;e[15]===b?C=e[16]:(C=(0,$.jsx)(`div`,{className:`min-w-0 flex-1`,children:(0,$.jsx)(Ky,{icon:b,label:x,onClick:()=>{N(`/settings/general-settings`)},trailing:S,iconClassName:`icon-sm`})}),e[15]=b,e[16]=C);",
+            "let C;e[15]===b?C=e[16]:(C=(0,$.jsx)(sw,{triggerButton:(0,$.jsx)(Ky,{icon:b,label:x,trailing:S,iconClassName:`icon-sm`})}),e[15]=b,e[16]=C);",
         ),
         (
             ",d=s?.plan??n,f=r?.accounts,p;e[2]!==i||e[3]!==t||e[4]!==d||e[5]!==f?(p=ow({authMethod:t,plan:d,currentAccount:i,accounts:f}),e[2]=i,e[3]=t,e[4]=d,e[5]=f,e[6]=p):p=e[6];",
@@ -1312,15 +1322,15 @@ patch_text_file(
         ),
         (
             "children:(0,$.jsx)(sw,{triggerButton:(0,$.jsx)(Ky,{icon:b,label:x,onClick:dw,trailing:S,iconClassName:`icon-sm`})})",
-            "children:(0,$.jsx)(Ky,{icon:b,label:x,onClick:()=>{N(`/settings/general-settings`)},trailing:S,iconClassName:`icon-sm`})",
+            "children:(0,$.jsx)(sw,{triggerButton:(0,$.jsx)(Ky,{icon:b,label:x,onClick:dw,trailing:S,iconClassName:`icon-sm`})})",
         ),
         (
-            "Ue=(0,$.jsxs)(dh,{open:i,onOpenChange:a,contentWidth:Ee,triggerButton:De,children:[Oe,He]})",
-            "Ue=(0,$.jsx)(`div`,{className:`contents`,children:De})",
+            "let Ue;return t[145]!==i||t[146]!==a||t[147]!==Ee||t[148]!==De||t[149]!==Oe||t[150]!==He?(Ue=(0,$.jsx)(`div`,{className:`contents`,children:De}),t[145]=i,t[146]=a,t[147]=Ee,t[148]=De,t[149]=Oe,t[150]=He,t[151]=Ue):Ue=t[151],Ue",
+            "(0,$.jsxs)(dh,{open:i,onOpenChange:a,contentWidth:Ee,triggerButton:De,children:[Oe,He]})",
         ),
         (
             "Ne=()=>{a(!1),E.dispatchMessage(`show-settings`,{section:Tg})}",
-            "Ne=()=>{a(!1),o(`/settings/general-settings`,{state:W})}",
+            "Ne=()=>{a(!1),E.dispatchMessage(`show-settings`,{section:Tg})}",
         ),
         (
             "(0,$.jsx)(lh.Item,{LeftIcon:xa,RightIcon:im,href:He,children:(0,$.jsx)(Y,{id:`composer.mode.remote.connectToCloud`,defaultMessage:`Connect Codex web`,description:`Menu item to connect Codex Cloud`})}),(0,$.jsx)(lh.Item,{LeftIcon:VI,className:`cursor-not-allowed`,disabled:!0,tooltipText:y.formatMessage({id:`composer.mode.remote.connectToCloudDisabledTooltip`,defaultMessage:`Set up an environment via Codex web to enable sending tasks to the cloud`,description:`Tooltip for disabled send to cloud item when Cloud is not connected`}),children:(0,$.jsx)(`span`,{className:`truncate`,children:(0,$.jsx)(Y,{id:`composer.mode.remote.sendToCloud`,defaultMessage:`Send to cloud`,description:`Disabled label when Codex Cloud is not connected`})})})",

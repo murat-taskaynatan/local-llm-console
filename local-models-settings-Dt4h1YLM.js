@@ -36,7 +36,7 @@ var p = e(n(), 1),
     { value: `remote`, label: `Connect to remote host` },
   ],
   P = [`gpt-oss:120b`, `qwen3.5:9.7b`, `qwen3.5:122b`],
-  O = [{ value: `gpt-5.4`, label: `gpt-5.4` }],
+  O = [`gpt-5.4`],
   $ = `codex-managed`,
   ee = `tailscale-websocket`,
   remoteProviderId = `local_llm_console_remote`;
@@ -67,35 +67,12 @@ function z(e) {
       : `ollama`;
 }
 
-function normalizeModelOptions(e) {
-  return Array.isArray(e)
-    ? e
-        .map((e) =>
-          typeof e == `string`
-            ? { value: e, label: e }
-            : e != null && typeof e.value == `string`
-              ? { value: e.value, label: v(e.label, e.value) }
-              : null,
-        )
-        .filter(Boolean)
-    : [];
+function B(e) {
+  return z(e) === `codex` ? O : z(e) === `remote` ? [] : P;
 }
 
-function getProviderModelOptions(e, t = O) {
-  return z(e) === `codex`
-    ? normalizeModelOptions(t)
-    : z(e) === `remote`
-      ? []
-      : normalizeModelOptions(P);
-}
-
-function B(e, t = O) {
-  return getProviderModelOptions(e, t).map((e) => e.value);
-}
-
-function Q(e, t = O) {
-  let n = B(e, t);
-  return n.length > 0 ? n[0] : z(e) === `codex` ? `gpt-5.4` : `gpt-oss:120b`;
+function Q(e) {
+  return z(e) === `codex` ? `gpt-5.4` : `gpt-oss:120b`;
 }
 
 function iee(e) {
@@ -106,9 +83,9 @@ function iee(e) {
 function deriveLocalCatalogPath(e, t = ``) {
   let n = v(t, ``);
   if (n.length > 0) return n;
-  let normalizedPath = v(e, ``).replace(/\\/g, `/`);
-  if (!normalizedPath.endsWith(`/config.toml`)) return ``;
-  let i = normalizedPath.slice(0, -`/config.toml`.length),
+  let r = v(e, ``).replace(/\\/g, `/`);
+  if (!r.endsWith(`/config.toml`)) return ``;
+  let i = r.slice(0, -`/config.toml`.length),
     a = i.lastIndexOf(`/`);
   if (a <= 0) return ``;
   let o = i.slice(0, a),
@@ -116,28 +93,27 @@ function deriveLocalCatalogPath(e, t = ``) {
   return s.length === 0 ? `` : `${o}/${s}-models.json`;
 }
 
-function K(e, t, n = O) {
-  let modelValue = v(t, ``),
-    i = B(e, n),
-    a = z(e) === `codex` ? P : normalizeModelOptions(n).map((e) => e.value);
-  return modelValue.length === 0
-    ? Q(e, n)
-    : i.includes(modelValue)
-      ? modelValue
-      : a.includes(modelValue)
-        ? Q(e, n)
-        : modelValue;
+function K(e, t) {
+  let n = v(t, ``),
+    r = B(e),
+    i = z(e) === `codex` ? P : O;
+  return n.length === 0
+    ? Q(e)
+    : r.includes(n)
+      ? n
+      : i.includes(n)
+        ? Q(e)
+        : n;
 }
 
-function normalizeProviderModelForSelection(e, t, n = O) {
-  let r = z(e),
-    i = v(t, ``),
-    a = normalizeModelOptions(n).map((e) => e.value);
-  return r === `codex`
-    ? Q(r, n)
-    : r === `remote` && (i.length === 0 || a.includes(i))
-      ? Q(r, n)
-      : K(r, i, n);
+function normalizeProviderModelForSelection(e, t) {
+  let n = z(e),
+    r = v(t, ``);
+  return n === `codex`
+    ? Q(n)
+    : n === `remote` && (r.length === 0 || (Array.isArray(O) ? O.includes(r) : !1))
+      ? Q(n)
+      : K(n, r);
 }
 
 function S(e, t = `443`) {
@@ -172,8 +148,8 @@ function readTomlStringValue(e, t) {
   }
 }
 
-function C(e, t = O) {
-  let n = z(
+function C(e) {
+  let t = z(
     v(
       e?.local_llm_console_provider,
       e?.model_provider,
@@ -182,8 +158,8 @@ function C(e, t = O) {
   );
   return {
     launchMode: `local`,
-    provider: n,
-    model: K(n, e?.model, t),
+    provider: t,
+    model: K(t, e?.model),
     reasoning: v(e?.model_reasoning_effort, `medium`),
     catalogPath: v(e?.model_catalog_json, ``),
     providerBaseUrl: v(
@@ -208,36 +184,11 @@ function L(e) {
   return JSON.stringify(e);
 }
 
-function T(e, t, n = O) {
-  let providerModelOptions = getProviderModelOptions(e, n),
-    i = providerModelOptions.map((e) => e.value);
-  return t != null && t.length > 0 && !i.includes(t)
-    ? [{ value: t, label: `${t} (current)` }, ...providerModelOptions]
-    : providerModelOptions;
-}
-
-async function loadProviderModelOptions(e) {
-  let t = z(e);
-  if (t !== `codex`) return getProviderModelOptions(t);
-  let n;
-  try {
-    n = await fetch(
-      `/__local-llm-console/provider-models?provider=${encodeURIComponent(t)}`,
-      { cache: `no-store` },
-    );
-  } catch {
-    return getProviderModelOptions(t);
-  }
-  let responseJson = null;
-  try {
-    responseJson = await n.json();
-  } catch {}
-  return !n.ok
-    ? getProviderModelOptions(t)
-    : (() => {
-        let e = normalizeModelOptions(responseJson == null ? void 0 : responseJson.models);
-        return e.length > 0 ? e : getProviderModelOptions(t);
-      })();
+function T(e, t) {
+  let n = B(e).map((e) => ({ value: e, label: e }));
+  return t != null && t.length > 0 && !B(e).includes(t)
+    ? [{ value: t, label: `${t} (current)` }, ...n]
+    : n;
 }
 
 function normalizeRemoteProviderBaseUrl(e) {
@@ -265,46 +216,6 @@ function deriveRemoteProviderApiBaseUrl(e) {
   t.search = ``;
   t.hash = ``;
   return t.toString();
-}
-
-function buildRemoteModelsQueryKeyConfigSource(e) {
-  let t = v(e?.local_llm_console_remote_provider_base_url, ``),
-    n = e?.model_providers?.[remoteProviderId]?.base_url;
-  if (t.length === 0 && typeof n == `string`) t = n.trim();
-  try {
-    t = normalizeRemoteProviderBaseUrl(t);
-  } catch {
-    return null;
-  }
-  if (t.length === 0) return null;
-  try {
-    t = new URL(t);
-  } catch {
-    return null;
-  }
-  t.pathname = t.pathname.replace(/\/+$/u, ``);
-  if (!t.pathname.endsWith(`/models`)) {
-    if (t.pathname.endsWith(`/v1`)) t.pathname = `${t.pathname}/models`;
-    else t.pathname = `${t.pathname}/v1/models`;
-  }
-  t.search = ``;
-  t.hash = ``;
-  return t.toString();
-}
-
-function getRemoteModelsListQueryKey(e, t) {
-  let n = buildRemoteModelsQueryKeyConfigSource(e);
-  if (n == null) return null;
-  let r = typeof e?.model == `string` ? e.model.trim() : ``;
-  return [
-    `models`,
-    `list`,
-    t,
-    `remote-endpoint`,
-    n,
-    r.length > 0 ? r : `gpt-oss:120b`,
-    v(e?.model_reasoning_effort, ``),
-  ];
 }
 
 function readLocalLlmConsoleSessionState() {
@@ -440,23 +351,18 @@ async function restartLocalLlmConsoleAppServer(e = {}) {
   );
 }
 
-function invalidateModelCatalogQueries(e, t) {
-  let n = e ?? getCurrentSessionHostId(),
+function invalidateModelCatalogQueries(e) {
+  let t = e ?? getCurrentSessionHostId(),
     r = getCurrentConfigHostId(),
-    i = [v(n, ``), v(r, ``)].filter((e) => e.length > 0),
-    o = new Set(i);
-  for (let e of o) {
+    n = [v(t, ``), v(r, ``)].filter((e) => e.length > 0),
+    i = new Set(n);
+  for (let e of i) {
     hostBus.dispatchMessage(`query-cache-invalidate`, {
       queryKey: [`config`, `user`, e],
     });
     hostBus.dispatchMessage(`query-cache-invalidate`, {
       queryKey: [`models`, `list`, e],
     });
-    let i = t == null ? null : getRemoteModelsListQueryKey(t, e);
-    i != null &&
-      hostBus.dispatchMessage(`query-cache-invalidate`, {
-        queryKey: i,
-      });
   }
   hostBus.dispatchMessage(`query-cache-invalidate`, {
     queryKey: [`config`, `user`],
@@ -503,8 +409,7 @@ function hasValidRemoteHostUrl(e) {
     return (
       t.length > 0 &&
       ![`yours.net`, `your-host.tailnet.ts.net`].includes(t) &&
-      n.protocol === `wss:` &&
-      t.endsWith(`.ts.net`)
+      n.protocol === `wss:`
     );
   } catch {
     return !1;
@@ -630,10 +535,10 @@ function reloadCurrentSessionForHost(e) {
 async function switchLocalLlmConsoleCurrentSession(e, t = {}) {
   let n = b(e);
   if (n === `remote`) {
-    let remoteUrlValue = v(t.remoteUrl, readLocalLlmConsoleSessionState()?.remoteUrl, ``);
-    if (!hasValidRemoteHostUrl(remoteUrlValue))
+    let r = v(t.remoteUrl, readLocalLlmConsoleSessionState()?.remoteUrl, ``);
+    if (!hasValidRemoteHostUrl(r))
       throw new Error(`Please enter a valid remote host.`);
-    let e = buildRemoteSessionRecord(remoteUrlValue),
+    let e = buildRemoteSessionRecord(r),
       n = mergeManagedRemoteSessionConnections(
         await loadManagedRemoteSessionConnections(),
         e,
@@ -649,31 +554,17 @@ async function switchLocalLlmConsoleCurrentSession(e, t = {}) {
       hostId: e.hostId,
       autoConnect: !0,
     });
-    if (typeof i?.errorMessage == `string` && i.errorMessage.trim().length > 0) {
-      let n = i.errorMessage.trim();
-      throw new Error(
-        `Unable to connect to the remote host. Response: ${JSON.stringify({
-          hostId: e.hostId,
-          state: i?.state ?? null,
-          errorMessage: n,
-        })}`,
-      );
-    }
-    if (i?.state != null && i.state !== `connected`) {
-      throw new Error(
-        `Unable to connect to the remote host. Response: ${JSON.stringify({
-          hostId: e.hostId,
-          state: i?.state,
-        })}`,
-      );
-    }
+    if (typeof i?.errorMessage == `string` && i.errorMessage.trim().length > 0)
+      throw new Error(i.errorMessage.trim());
+    if (i?.state != null && i.state !== `connected`)
+      throw new Error(`Unable to connect to the remote host.`);
     reloadCurrentSessionForHost(e.hostId);
     return e;
   }
-  let hostIdValue = v(t.hostId, getCurrentSessionHostId(), ``);
-  if (hostIdValue.length > 0) {
+  let r = v(t.hostId, getCurrentSessionHostId(), ``);
+  if (r.length > 0) {
     let e = await sendLocalLlmConsoleRequest(`set-remote-connection-auto-connect`, {
-      hostId: hostIdValue,
+      hostId: r,
       autoConnect: !1,
     });
     if (
@@ -830,10 +721,7 @@ function RuntimeSettingsContent(props = {}) {
         local_llm_console_remote_provider_base_url: rawRemoteProviderBaseUrl,
       };
     }, [e?.config, rawRemoteProviderBaseUrl]),
-    [cloudModelOptions, setCloudModelOptions] = (0, p.useState)(() =>
-      getProviderModelOptions(`codex`),
-    ),
-    t = (0, p.useMemo)(() => C(rawConfig, cloudModelOptions), [
+    t = (0, p.useMemo)(() => C(rawConfig), [
       rawConfig?.local_llm_console_mode,
       rawConfig?.model_provider,
       rawConfig?.oss_provider,
@@ -849,7 +737,6 @@ function RuntimeSettingsContent(props = {}) {
       rawConfig?.local_llm_console_host_transport,
       rawConfig?.local_llm_console_host_listen_url,
       rawConfig?.local_llm_console_host_https_port,
-      L(cloudModelOptions),
     ]),
     [w, E] = (0, p.useState)(t),
     [D, U] = (0, p.useState)(null),
@@ -868,17 +755,10 @@ function RuntimeSettingsContent(props = {}) {
     se = e?.configWriteTarget?.filePath ?? ``,
     ce = e?.configWriteTarget?.expectedVersion ?? null,
     ye = (0, p.useMemo)(
-      () => ({
-        ...t,
-        model: K(t.provider, t.model, cloudModelOptions),
-        catalogPath: deriveLocalCatalogPath(se, t.catalogPath),
-      }),
-      [se, t.catalogPath, t.model, t.provider, L(t), L(cloudModelOptions)],
+      () => ({ ...t, catalogPath: deriveLocalCatalogPath(se, t.catalogPath) }),
+      [se, t.catalogPath, L(t)],
     ),
-    le = (0, p.useMemo)(
-      () => T(w.provider, w.model, cloudModelOptions),
-      [w.provider, w.model, L(cloudModelOptions)],
-    ),
+    le = (0, p.useMemo)(() => T(w.provider, w.model), [w.provider, w.model]),
     ue = localSignature(ye) !== localSignature(w),
     de = remoteSignature(ye) !== remoteSignature(w),
     fe = isRemoteScope ? de : ue,
@@ -1066,30 +946,24 @@ function RuntimeSettingsContent(props = {}) {
               },
             );
         }
-      try {
-        await i.mutateAsync({
-          filePath: se || null,
-          expectedVersion: ce,
-          edits,
-        });
+        try {
+          await i.mutateAsync({
+            filePath: se || null,
+            expectedVersion: ce,
+            edits,
+          });
         } catch (e) {
           if (!isLocalLlmConsoleConfigVersionConflict(e)) throw e;
-          let freshWriteTarget = await r(),
-            n = freshWriteTarget?.data?.configWriteTarget ?? null,
+          let t = await r(),
+            n = t?.data?.configWriteTarget ?? null,
             a = n?.filePath ?? se ?? null,
             o = n?.expectedVersion ?? null;
-          await i.mutateAsync({
+        await i.mutateAsync({
             filePath: a,
             expectedVersion: o,
             edits,
           });
         }
-        let y = t;
-        try {
-          let x = await r();
-          y = x?.data?.config ?? y;
-        } catch {}
-        invalidateModelCatalogQueries(getCurrentSessionHostId(), y);
         E((t) => ({ ...W, launchMode: `local` }));
         ie({
           currentMode: isRemoteScope ? _e : b(e),
@@ -1107,11 +981,11 @@ function RuntimeSettingsContent(props = {}) {
             model: o,
             reasoning: s,
           });
-          let refreshedConfig = await r(),
-            t = refreshedConfig?.data?.config ?? {},
+          let e = await r(),
+            t = e?.data?.config ?? {},
             n = C(t),
-            i = refreshedConfig?.data?.configWriteTarget?.filePath ?? se;
-          invalidateModelCatalogQueries(getCurrentSessionHostId(), t);
+            i = e?.data?.configWriteTarget?.filePath ?? se;
+          invalidateModelCatalogQueries();
           E({ ...n, catalogPath: deriveLocalCatalogPath(i, n.catalogPath) });
           U({
             tone: `success`,
@@ -1119,9 +993,9 @@ function RuntimeSettingsContent(props = {}) {
           });
           return !0;
         }
+        await r();
         if (isRemoteScope)
           try {
-            invalidateModelCatalogQueries(getCurrentSessionHostId(), y);
             await applyLocalLlmConsoleHostService(K);
           } catch (e) {
             U({
@@ -1196,14 +1070,14 @@ function RuntimeSettingsContent(props = {}) {
         });
         return;
       }
-      let saveResult = await xe(w.launchMode, {
+      let r = await xe(w.launchMode, {
         scope: `remote`,
         hostAction: e === `on` ? `start` : `stop`,
         nextState: n,
         savingText: e === `on` ? `Starting local server...` : `Stopping local server...`,
         successText: e === `on` ? `Local server started.` : `Local server stopped.`,
       });
-      saveResult || E((e) => ({ ...e, hostMode: t }));
+      r || E((e) => ({ ...e, hostMode: t }));
     },
     Ce = () => {
       E((e) => ({
@@ -1279,11 +1153,11 @@ function RuntimeSettingsContent(props = {}) {
     Oe = n
       ? (0, m.jsx)(`div`, {
           className: `text-sm text-token-text-secondary`,
-          children: isRemoteScope
+          children: ne
             ? `Loading remote settings...`
             : `Loading local runtime settings...`,
         })
-      : isRemoteScope
+      : ne
         ? (0, m.jsxs)(`div`, {
             className: `flex flex-col`,
             children: [
@@ -1510,7 +1384,7 @@ function RuntimeSettingsContent(props = {}) {
                             return {
                               ...t,
                               provider: n,
-                              model: K(n, t.model, cloudModelOptions),
+                              model: normalizeProviderModelForSelection(n, t.model),
                               reasoning: v(t.reasoning, `medium`),
                             };
                           });
@@ -1660,9 +1534,7 @@ function RuntimeSettingsContent(props = {}) {
     let e = !1;
     if (se.length === 0) {
       setRawRemoteProviderBaseUrl(null);
-      return () => {
-        e = !0;
-      };
+      return;
     }
     readLocalLlmConsoleFileRequest(`read-file`, { params: { path: se } })
       .then((t) => {
@@ -1681,21 +1553,6 @@ function RuntimeSettingsContent(props = {}) {
       e = !0;
     };
   }, [se, ce]);
-
-  (0, p.useEffect)(() => {
-    let e = !1;
-    if (z(w.provider) !== `codex`) return;
-    loadProviderModelOptions(`codex`)
-      .then((t) => {
-        e || setCloudModelOptions(t);
-      })
-      .catch(() => {
-        e || setCloudModelOptions(getProviderModelOptions(`codex`));
-      });
-    return () => {
-      e = !0;
-    };
-  }, [w.provider]);
 
   (0, p.useEffect)(() => {
     let e = !1,

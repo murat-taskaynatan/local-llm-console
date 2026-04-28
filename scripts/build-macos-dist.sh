@@ -216,6 +216,25 @@ def replace_optional(path: Path, original: str, patched: str) -> None:
     path.write_text(text.replace(original, patched, 1))
 
 
+def ensure_text_contains(
+    path: Path,
+    needle: str,
+    insertion: str,
+    *,
+    anchor: str = None,
+) -> None:
+    text = path.read_text()
+    if needle in text:
+        return
+    if anchor is not None:
+        if anchor not in text:
+            return
+        text = text.replace(anchor, f"{anchor}\n{insertion}\n", 1)
+    else:
+        text = f"{text}\n{insertion}\n"
+    path.write_text(text)
+
+
 package_json = root / "package.json"
 package_data = json.loads(package_json.read_text())
 package_data["name"] = "local-llm-console"
@@ -422,10 +441,9 @@ replace_optional(
     'import{f as E,y as LocalConfigQuery}from"./config-queries-jUrDLWnn.js";',
 )
 font_text = runtime_font_settings_bundle.read_text()
-if "LocalRemoteFetchBridge" not in font_text:
-    font_text = 'import{w as LocalRemoteFetchBridge}from"./vscode-api-D-CkvzxH.js";\n' + font_text
-font_anchor = "var Re=100,ze=[`models`,`list`];function Be(e,t,n=Re){return[...ze,e,t??`no-auth`,n]}"
-font_helpers = (
+font_anchor_prefix = "var Re=100,ze=[`models`,`list`];"
+font_anchor = font_anchor_prefix + "function Be(e,t,n=Re){return[...ze,e,t??`no-auth`,n]}"
+font_helpers_full = (
     font_anchor
     + "function LocalRemoteEnabled(e){return e?.local_llm_console_provider===`remote`||e?.model_provider===`local_llm_console_remote`||e?.oss_provider===`local_llm_console_remote`}"
     + "function LocalRemoteReasoningEffort(e){return Ne.includes(e)?e:Me}"
@@ -433,26 +451,45 @@ font_helpers = (
     + "function LocalRemoteModelsUrl(e){let t=LocalRemoteBaseUrl(e);if(t.length===0)return null;try{let n=new URL(t);return n.pathname=n.pathname.replace(/\\/+$/u,``),n.pathname.endsWith(`/models`)||(n.pathname=n.pathname.endsWith(`/v1`)?`${n.pathname}/models`:`${n.pathname}/v1/models`),n.search=``,n.hash=``,n.toString()}catch{return null}}"
     + "function LocalRemoteSavedModel(e){let t=typeof e?.model==`string`?e.model.trim():``;return t.length>0?t:`gpt-oss:120b`}"
     + "function LocalRemoteModelNames(e){let t=[],n=e?.data??e?.models??e;if(Array.isArray(n))for(let e of n){let n=typeof e==`string`?e:typeof e?.id==`string`?e.id:typeof e?.model==`string`?e.model:typeof e?.name==`string`?e.name:``;n=n.trim(),n.length>0&&t.push(n)}return[...new Set(t)]}"
-    + "async function LocalRemoteFetchCatalog(e){let t=LocalRemoteModelsUrl(e);if(t==null)return{localRemoteCatalog:!0,models:[],error:`Remote endpoint URL is missing.`};try{let n=await LocalRemoteFetchBridge.getInstance().get(t,{accept:`application/json`}),r=LocalRemoteModelNames(n?.body??n);return{localRemoteCatalog:!0,models:r,error:r.length===0?`Remote endpoint returned no models.`:null}}catch{return{localRemoteCatalog:!0,models:[],error:`Cannot reach remote endpoint.`}}}"
+    + "async function LocalRemoteFetchCatalog(e){let t=LocalRemoteModelsUrl(e);if(t==null)return{localRemoteCatalog:!0,models:[],error:`Remote endpoint URL is missing.`};try{let n=await dh.getInstance().get(t,{accept:`application/json`}),r=LocalRemoteModelNames(n.body);return{localRemoteCatalog:!0,models:r,error:r.length===0?`Remote endpoint returned no models.`:null}}catch(t){let n=e?.local_llm_console_remote_model_ids??e?.local_llm_console_remote_models??e?.model_providers?.local_llm_console_remote?.models,r=LocalRemoteModelNames(n),i=LocalRemoteSavedModel(e),a=[`qwen3.5:9.7b`,`qwen3.5:122b`,`gpt-oss:120b`];return{localRemoteCatalog:!0,models:[...new Set([i,...r,...a])],error:null}}}"
     + "function LocalRemoteEfforts(e){let t=LocalRemoteReasoningEffort(e?.model_reasoning_effort);return{defaultReasoningEffort:t,supportedReasoningEfforts:Ne.map(e=>({reasoningEffort:e,description:`${e} effort`}))}}"
     + "function LocalRemoteCatalogRecord(e,t,n){let r=LocalRemoteEfforts(t);return{model:e,displayName:e,description:`Remote endpoint model.`,...r,isDefault:n,hidden:!1}}"
     + "function LocalRemoteUnavailableRecord(e,t,n){let r=LocalRemoteEfforts(e);return{model:LocalRemoteSavedModel(e),displayName:t,description:n,...r,isDefault:!0,hidden:!1,disabled:!0,localRemoteUnavailable:!0}}"
     + "function LocalRemoteModelList(e,t){if(!LocalRemoteEnabled(e))return null;if(t?.localRemoteCatalog===!0){if(t.error)return{modelsByType:{models:[LocalRemoteUnavailableRecord(e,`Cannot reach remote endpoint`,t.error)]},defaultModel:null};let n=Array.isArray(t.models)?t.models:[];if(n.length===0)return{modelsByType:{models:[LocalRemoteUnavailableRecord(e,`No remote model available`, `Remote endpoint returned no models.`)]},defaultModel:null};let r=LocalRemoteSavedModel(e),i=n.map(t=>LocalRemoteCatalogRecord(t,e,t===r)),a=i.find(e=>e.model===r)??i[0]??null;return{modelsByType:{models:i},defaultModel:a}}return null}"
 )
-if "function LocalRemoteEnabled" not in font_text:
-    if font_anchor not in font_text:
+font_provider_only = (
+    "function LocalProviderKind(e){let t=typeof e?.local_llm_console_provider==`string`?e.local_llm_console_provider.trim():``,n=typeof e?.model_provider==`string`?e.model_provider.trim():``,r=typeof e?.oss_provider==`string`?e.oss_provider.trim():``,i=t.length>0?t:n.length>0?n:r;return i===`codex`||i===`openai`?`codex`:i===`remote`||i===`local_llm_console_remote`?`remote`:i||`ollama`}"
+)
+if "function LocalProviderKind" not in font_text:
+    if "function LocalRemoteEnabled" in font_text and "function Qe" in font_text:
+        # Already partially patched (provider-aware query key helper is present), just ensure LocalProviderKind exists.
+        if font_anchor_prefix not in font_text:
+            raise SystemExit("macOS dist patch failed: font-settings model list anchor not found")
+        font_text = font_text.replace(font_anchor_prefix, font_anchor_prefix + font_provider_only, 1)
+    elif font_anchor in font_text:
+        # Legacy upstream bundle with no prior font-settings patch.
+        if "function LocalRemoteEnabled" in font_text:
+            font_text = font_text.replace(font_anchor, font_anchor + font_provider_only, 1)
+        else:
+            font_text = font_text.replace(font_anchor, font_helpers_full, 1)
+    else:
         raise SystemExit("macOS dist patch failed: font-settings model list anchor not found")
-    font_text = font_text.replace(font_anchor, font_helpers, 1)
-font_bridge_override = "LocalRemoteFetchCatalog=async function(e){let t=LocalRemoteModelsUrl(e);if(t==null)return{localRemoteCatalog:!0,models:[],error:`Remote endpoint URL is missing.`};try{let n=await LocalRemoteFetchBridge.getInstance().get(t,{accept:`application/json`}),r=LocalRemoteModelNames(n?.body??n);return{localRemoteCatalog:!0,models:r,error:r.length===0?`Remote endpoint returned no models.`:null}}catch{return{localRemoteCatalog:!0,models:[],error:`Cannot reach remote endpoint.`}}};"
-if font_bridge_override not in font_text:
-    font_text = font_text.replace("//# sourceMappingURL=", font_bridge_override + "\n//# sourceMappingURL=", 1)
+# Remove accidental duplicate helper blocks if a prior build injected twice
+dup_idx = font_text.find("function LocalRemoteEnabled")
+if dup_idx != -1:
+    second_dup_idx = font_text.find("function LocalRemoteEnabled", dup_idx + 1)
+    if second_dup_idx != -1:
+        next_marker = font_text.find("function Ve(e){", second_dup_idx)
+        if next_marker != -1:
+            font_text = font_text[:second_dup_idx] + font_text[next_marker:]
+
 font_start = font_text.find("function Ve(e){")
 font_end = font_text.find("function He(e){", font_start)
 if font_start < 0 or font_end < 0:
     raise SystemExit("macOS dist patch failed: font-settings model list function not found")
-if "LocalConfigQuery({hostId:n})" not in font_text[font_start:font_end]:
+if "LocalProviderKind(u)" not in font_text[font_start:font_end]:
     patched_font_model_query = (
-        "function Ve(e){let t=e?.hostId??s,n=e?.limit??Re,r=g(_),i=O(t),a=i?.authMethod??null,o=i?.isLoading??!1,c=Ie(),{data:l}=LocalConfigQuery({hostId:t}),u=l?.config??l,d=LocalRemoteEnabled(u),p=d?[...ze,t,`remote-endpoint`,LocalRemoteModelsUrl(u)??``,LocalRemoteSavedModel(u),u?.model_reasoning_effort??``]:Be(t,a,n),m=r.includes(t)&&!o,y=()=>d?LocalRemoteFetchCatalog(u):b(`list-models-for-host`,{hostId:t,includeHidden:!0,cursor:null,limit:n}),x=e=>{let t=LocalRemoteModelList(u,e);if(t)return t;let{data:n}=e,r={models:[]},i=null;return n.forEach(e=>{if(!e.hidden){let n=a===`copilot`?[e.supportedReasoningEfforts.find(He)??{reasoningEffort:`medium`,description:`medium effort`}]:[...e.supportedReasoningEfforts];r.models.push({...e,supportedReasoningEfforts:n}),i=e.isDefault?e:i}}),i??=r.models.find(e=>e.model===c.defaultModel)??null,{modelsByType:r,defaultModel:i}};return h({queryKey:p,enabled:m,staleTime:f.FIVE_MINUTES,queryFn:y,select:x})}"
+        "function Ve(e){let t=e?.hostId??s,n=e?.limit??Re,r=g(_),i=O(t),a=i?.authMethod??null,o=i?.isLoading??!1,c=Ie(),{data:l}=LocalConfigQuery({hostId:t}),u=l?.config??l,d=LocalRemoteEnabled(u),p=d?[...ze,t,`remote-endpoint`,LocalProviderKind(u),LocalRemoteModelsUrl(u)??``,LocalRemoteSavedModel(u),u?.model_reasoning_effort??``]:[...ze,t,`${a}:${LocalProviderKind(u)}`,n],m=r.includes(t)&&!o,y=()=>d?LocalRemoteFetchCatalog(u):b(`list-models-for-host`,{hostId:t,includeHidden:!0,cursor:null,limit:n}),x=e=>{let t=LocalRemoteModelList(u,e);if(t)return t;let{data:n}=e,r={models:[]},i=null;return n.forEach(e=>{if(!e.hidden){let n=a===`copilot`?[e.supportedReasoningEfforts.find(He)??{reasoningEffort:`medium`,description:`medium effort`}]:[...e.supportedReasoningEfforts];r.models.push({...e,supportedReasoningEfforts:n}),i=e.isDefault?e:i}}),i??=r.models.find(e=>e.model===c.defaultModel)??null,{modelsByType:r,defaultModel:i}};return h({queryKey:p,enabled:m,staleTime:f.FIVE_MINUTES,queryFn:y,select:x})}"
     )
     font_text = font_text[:font_start] + patched_font_model_query + font_text[font_end:]
 runtime_font_settings_bundle.write_text(font_text)
@@ -518,6 +555,17 @@ function mergeManagedRemoteSessionConnections(e, t) {
   return [...n.filter((e) => e.hostId !== t.hostId && e.connectionType !== ee), t];
 }""",
 )
+ensure_text_contains(
+    runtime_local_models_bundle,
+    "function invalidateModelCatalogQueries",
+    "function invalidateModelCatalogQueries(e) {\n  let t = e ?? getCurrentSessionHostId();\n  hostBus.dispatchMessage(`query-cache-invalidate`, {\n    queryKey: [`config`, `user`],\n  });\n  hostBus.dispatchMessage(`query-cache-invalidate`, {\n    queryKey: [`config`, `user`, t],\n  });\n  hostBus.dispatchMessage(`query-cache-invalidate`, {\n    queryKey: [`models`, `list`],\n  });\n  hostBus.dispatchMessage(`query-cache-invalidate`, {\n    queryKey: [`models`, `list`, t],\n  });\n}\n",
+)
+ensure_text_contains(
+    runtime_local_models_bundle,
+    "invalidateModelCatalogQueries(getCurrentSessionHostId());",
+    "        invalidateModelCatalogQueries(getCurrentSessionHostId());\n",
+    anchor="        E((t) => ({ ...W, launchMode: `local` }));",
+)
 replace_optional(
     runtime_local_models_bundle,
     """async function applyLocalLlmConsoleHostService(e = `reload`) {
@@ -574,6 +622,72 @@ replace_optional(
 )
 replace_optional(
     runtime_local_models_bundle,
+    """async function restartLocalLlmConsoleAppServer(e = {}) {
+  let t = isRemoteSessionHostId(v(e.hostId, ``)) ? v(e.hostId, ``) : `local`,
+    n = Date.now() + (typeof e.timeoutMs == `number` && e.timeoutMs > 0 ? e.timeoutMs : 15000),
+    r = null;
+  hostBus.dispatchMessage(`codex-app-server-restart`, { hostId: t });
+  await new Promise((e) => window.setTimeout(e, 400));
+  for (; Date.now() < n; ) {
+    try {
+      let n = await sendLocalLlmConsoleRequest(`read-config`, {
+          hostId: t,
+          includeLayers: !1,
+          cwd: null,
+        }),
+        r = C(n?.config ?? {});
+      if (
+        (e.provider == null || r.provider === z(e.provider)) &&
+        (e.model == null || r.model === K(e.provider ?? r.provider, e.model)) &&
+        (e.reasoning == null || r.reasoning === e.reasoning)
+      )
+        return r;
+    } catch (e) {
+      r = e;
+    }
+    await new Promise((e) => window.setTimeout(e, 500));
+  }
+  throw new Error(
+    r instanceof Error && r.message.trim().length > 0
+      ? `Timed out restarting the local session: ${r.message}`
+      : `Timed out restarting the local session.`,
+  );
+}""",
+    """async function restartLocalLlmConsoleAppServer(e = {}) {
+  let t = isRemoteSessionHostId(v(e.hostId, ``)) ? v(e.hostId, ``) : `local`,
+    n = Date.now() + (typeof e.timeoutMs == `number` && e.timeoutMs > 0 ? e.timeoutMs : 15000),
+    r = null;
+  hostBus.dispatchMessage(`codex-app-server-restart`, { hostId: t });
+  await new Promise((e) => window.setTimeout(e, 400));
+  for (; Date.now() < n; ) {
+    try {
+      let n = await sendLocalLlmConsoleRequest(`read-config`, {
+          hostId: t,
+          includeLayers: !1,
+          cwd: null,
+        }),
+        r = C(n?.config ?? {});
+      if (
+        (e.provider == null || r.provider === z(e.provider)) &&
+        (e.model == null || r.model === K(e.provider ?? r.provider, e.model)) &&
+        (e.reasoning == null || r.reasoning === e.reasoning)
+      )
+        return r;
+    } catch (e) {
+      r = e;
+    }
+    await new Promise((e) => window.setTimeout(e, 500));
+  }
+  throw new Error(
+    r instanceof Error && r.message.trim().length > 0
+      ? `Timed out restarting the local session: ${r.message}`
+      : `Timed out restarting the local session.`,
+  );
+}
+""",
+)
+replace_optional(
+    runtime_local_models_bundle,
     """function Q(e) {
   return z(e) === `codex` ? `gpt-5.4` : z(e) === `remote` ? `` : `gpt-oss:120b`;
 }""",
@@ -583,43 +697,6 @@ replace_optional(
 )
 replace_optional(
     runtime_local_models_bundle,
-    """function K(e, t) {
-  let n = v(t, ``),
-    r = B(e),
-    i = z(e) === `codex` ? P : O;
-  return n.length === 0
-    ? Q(e)
-    : r.includes(n)
-      ? n
-      : i.includes(n)
-        ? Q(e)
-        : n;
-}""",
-    """function K(e, t) {
-  let n = v(t, ``),
-    r = B(e),
-    i = z(e) === `codex` ? P : O;
-  return n.length === 0
-    ? Q(e)
-    : r.includes(n)
-      ? n
-      : i.includes(n)
-        ? Q(e)
-        : n;
-}
-
-function normalizeProviderModelForSelection(e, t) {
-  let n = z(e),
-    r = v(t, ``);
-  return n === `codex`
-    ? Q(n)
-    : n === `remote` && (r.length === 0 || O.includes(r))
-      ? Q(n)
-      : K(n, r);
-}""",
-)
-replace_optional(
-    runtime_local_models_bundle,
     """function stripWebsocketUrlScheme(e, t = ``) {
   let n = v(e, t);
   return n.replace(/^wss?:\/\//i, ``);
@@ -631,29 +708,15 @@ function C(e) {""",
   return n.replace(/^wss?:\/\//i, ``);
 }
 
-function escapeRegExp(e) {
-  return e.replace(/[.*+?^${}()|[\]\\]/g, `\\$&`);
-}
-
-function readTomlStringValue(e, t) {
-  let n = new RegExp(
-      `^\\s*${escapeRegExp(t)}\\s*=\\s*"((?:\\\\.|[^"\\\\])*)"`,
-      `m`,
-    ).exec(e),
-    r = n?.[1];
-  if (r == null) return ``;
-  try {
-    return JSON.parse(`"${r}"`).trim();
-  } catch {
-    return r.trim();
-  }
-}
-
 function C(e) {""",
 )
 replace_optional(
     runtime_local_models_bundle,
-    "    providerBaseUrl: v(e?.local_llm_console_remote_provider_base_url, ``),",
+    """    providerBaseUrl: v(
+      e?.local_llm_console_remote_provider_base_url,
+      e?.model_providers?.[remoteProviderId]?.base_url,
+      ``,
+    ),""",
     """    providerBaseUrl: v(
       e?.local_llm_console_remote_provider_base_url,
       e?.model_providers?.[remoteProviderId]?.base_url,
@@ -663,21 +726,31 @@ replace_optional(
 replace_optional(
     runtime_local_models_bundle,
     """    i = u(),
-    t = (0, p.useMemo)(() => C(e?.config), [
-      e?.config?.local_llm_console_mode,
-      e?.config?.model_provider,
-      e?.config?.oss_provider,
-      e?.config?.model,
-      e?.config?.model_reasoning_effort,
-      e?.config?.model_catalog_json,
-      e?.config?.local_llm_console_remote_provider_base_url,
-      e?.config?.local_llm_console_remote_transport,
-      e?.config?.local_llm_console_remote_url,
-      e?.config?.local_llm_console_remote_auth_token_env,
-      e?.config?.local_llm_console_host_enabled,
-      e?.config?.local_llm_console_host_transport,
-      e?.config?.local_llm_console_host_listen_url,
-      e?.config?.local_llm_console_host_https_port,
+    [rawRemoteProviderBaseUrl, setRawRemoteProviderBaseUrl] = (0, p.useState)(null),
+    rawConfig = (0, p.useMemo)(() => {
+      if (rawRemoteProviderBaseUrl == null || rawRemoteProviderBaseUrl.length === 0)
+        return e?.config;
+      return {
+        ...(e?.config ?? {}),
+        local_llm_console_remote_provider_base_url: rawRemoteProviderBaseUrl,
+      };
+    }, [e?.config, rawRemoteProviderBaseUrl]),
+    t = (0, p.useMemo)(() => C(rawConfig), [
+      rawConfig?.local_llm_console_mode,
+      rawConfig?.model_provider,
+      rawConfig?.oss_provider,
+      rawConfig?.model,
+      rawConfig?.model_reasoning_effort,
+      rawConfig?.model_catalog_json,
+      rawConfig?.local_llm_console_remote_provider_base_url,
+      rawConfig?.model_providers?.[remoteProviderId]?.base_url,
+      rawConfig?.local_llm_console_remote_transport,
+      rawConfig?.local_llm_console_remote_url,
+      rawConfig?.local_llm_console_remote_auth_token_env,
+      rawConfig?.local_llm_console_host_enabled,
+      rawConfig?.local_llm_console_host_transport,
+      rawConfig?.local_llm_console_host_listen_url,
+      rawConfig?.local_llm_console_host_https_port,
     ]),""",
     """    i = u(),
     [rawRemoteProviderBaseUrl, setRawRemoteProviderBaseUrl] = (0, p.useState)(null),
@@ -728,15 +801,33 @@ replace_optional(
     readLocalLlmConsoleFileRequest(`read-file`, { params: { path: se } })
       .then((t) => {
         if (e) return;
-        let n = readTomlStringValue(
-            typeof t?.contents == `string` ? t.contents : ``,
-            `local_llm_console_remote_provider_base_url`,
-          ),
-          r = n.length > 0 ? n : null;
-        setRawRemoteProviderBaseUrl((e) => (e === r ? e : r));
+        let n = typeof t?.contents == `string` ? t.contents : ``,
+          r = null;
+        if (n.length > 0) {
+          let t = new RegExp(
+              `^\\s*local_llm_console_remote_provider_base_url\\s*=\\s*"((?:\\\\.|[^"\\\\])*)"`,
+              `m`,
+            ).exec(n),
+            i = t?.[1];
+          if (i != null)
+            try {
+              r = JSON.parse(`"${i}"`).trim();
+            } catch {
+              r = i.trim();
+            }
+          r != null && r.length === 0 && (r = null);
+        }
+        setRawRemoteProviderBaseUrl((e) => (e && e.length > 0 ? e : r));
       })
       .catch(() => {
-        if (!e) setRawRemoteProviderBaseUrl(null);
+        if (!e) {
+          if (se.length > 0) {
+            let t = readCachedRemoteProviderBaseUrl(se);
+            setRawRemoteProviderBaseUrl((e) => (e && e.length > 0 ? e : t));
+            return;
+          }
+          setRawRemoteProviderBaseUrl(null);
+        }
       });
     return () => {
       e = !0;
@@ -748,33 +839,34 @@ replace_optional(
 )
 replace_optional(
     runtime_local_models_bundle,
-    """  if (n.protocol !== `http:` && n.protocol !== `https:`)
-    throw new Error(`Remote endpoint URL is invalid.`);
-  return n.toString();
-}""",
-    """  if (n.protocol !== `http:` && n.protocol !== `https:`)
-    throw new Error(`Remote endpoint URL is invalid.`);
-  return n.toString();
-}
-
-function deriveRemoteProviderApiBaseUrl(e) {
-  let t = new URL(e);
-  t.pathname = t.pathname.replace(/\\/+$/u, ``);
-  if (t.pathname.endsWith(`/models`))
-    t.pathname = t.pathname.slice(0, -`/models`.length) || `/`;
-  t.search = ``;
-  t.hash = ``;
-  return t.toString();
-}""",
-)
-replace_optional(
-    runtime_local_models_bundle,
     """                              provider: n,
                               model: K(n, t.model),
                             };""",
     """                              provider: n,
-                              model: normalizeProviderModelForSelection(n, t.model),
-                              reasoning: v(t.reasoning, `medium`),
+                              model:
+                                n === `codex`
+                                  ? (Array.isArray(B(n)) ? B(n).includes(t.model) : !1)
+                                    ? t.model
+                                    : Q(n)
+                                  : z(n) === `remote` &&
+                                      (
+                                        v(t.model, ``).length === 0 ||
+                                        (Array.isArray(B(`codex`))
+                                          ? B(`codex`).includes(v(t.model, ``))
+                                          : !1)
+                                      )
+                                    ? Q(n)
+                                    : K(n, t.model),
+                              providerBaseUrl:
+                                z(t.provider) === `remote` || n === `remote`
+                                  ? v(
+                                      t.providerBaseUrl,
+                                      rawRemoteProviderBaseUrlRef.current,
+                                      rawRemoteProviderBaseUrl,
+                                      ye.providerBaseUrl,
+                                      ``,
+                                    )
+                                  : t.providerBaseUrl,
                             };""",
 )
 replace_optional(
@@ -798,6 +890,7 @@ replace_optional(
                               placeholder: `gpt-oss:120b`,
                             })
                           : (0, m.jsx)(F, {
+                              key: z(w.provider),
                               ariaLabel: `Default model`,
                               options: le,
                               value: w.model,
@@ -838,7 +931,7 @@ replace_optional(
         (o = Q(normalizedProvider));
       !isRemoteScope &&
         normalizedProvider === `remote` &&
-        (o.length === 0 || O.includes(o)) &&
+        (o.length === 0 || (Array.isArray(B(`codex`)) ? B(`codex`).includes(o) : !1)) &&
         (o = Q(normalizedProvider));
       if (""",
 )
@@ -869,11 +962,6 @@ replace_optional(
 )
 replace_optional(
     runtime_local_models_bundle,
-    "          providerBaseUrl = normalizeRemoteProviderBaseUrl(providerBaseUrl);",
-    "          providerBaseUrl = normalizeRemoteProviderBaseUrl(providerBaseUrl);\n          providerApiBaseUrl = deriveRemoteProviderApiBaseUrl(providerBaseUrl);",
-)
-replace_optional(
-    runtime_local_models_bundle,
     """        let edits = [
           { keyPath: `local_llm_console_provider`, value: a },
           { keyPath: `model_provider`, value: providerValue },
@@ -883,6 +971,14 @@ replace_optional(
           {
             keyPath: `local_llm_console_remote_provider_base_url`,
             value: providerBaseUrl,
+          },
+          {
+            keyPath: `model_providers.${remoteProviderId}.base_url`,
+            value: providerApiBaseUrl,
+          },
+          {
+            keyPath: `model_providers.${remoteProviderId}.wire_api`,
+            value: `responses`,
           },
           { keyPath: `local_llm_console_mode`, value: `local` },
           {
@@ -913,21 +1009,20 @@ replace_optional(
         ];
         includeCatalogPathEdit &&
           edits.splice(5, 0, { keyPath: `model_catalog_json`, value: c });
-        normalizedProvider === `remote` &&
-          edits.push(
-            {
-              keyPath: `model_providers.${remoteProviderId}.name`,
-              value: `Remote endpoint`,
-            },
-            {
-              keyPath: `model_providers.${remoteProviderId}.base_url`,
-              value: providerBaseUrl,
-            },
-            {
-              keyPath: `model_providers.${remoteProviderId}.wire_api`,
-              value: `responses`,
-            },
-          );""",
+        edits.push(
+          {
+            keyPath: `model_providers.${remoteProviderId}.name`,
+            value: `Remote endpoint`,
+          },
+          {
+            keyPath: `model_providers.${remoteProviderId}.base_url`,
+            value: providerBaseUrl,
+          },
+          {
+            keyPath: `model_providers.${remoteProviderId}.wire_api`,
+            value: `responses`,
+          },
+        );""",
     """        let edits = [
           { keyPath: `local_llm_console_mode`, value: isRemoteScope ? b(e) : `local` },
           {
@@ -963,18 +1058,14 @@ replace_optional(
             { keyPath: `oss_provider`, value: providerValue },
             { keyPath: `model`, value: o },
             { keyPath: `model_reasoning_effort`, value: s },
-            {
-              keyPath: `local_llm_console_remote_provider_base_url`,
-              value: providerBaseUrl,
-            },
           );
           includeCatalogPathEdit &&
             edits.splice(5, 0, { keyPath: `model_catalog_json`, value: c });
-          normalizedProvider === `remote` &&
+          if (normalizedProvider === `remote`) {
             edits.push(
               {
-                keyPath: `model_providers.${remoteProviderId}.name`,
-                value: `Remote endpoint`,
+                keyPath: `local_llm_console_remote_provider_base_url`,
+                value: providerBaseUrl,
               },
               {
                 keyPath: `model_providers.${remoteProviderId}.base_url`,
@@ -984,7 +1075,94 @@ replace_optional(
                 keyPath: `model_providers.${remoteProviderId}.wire_api`,
                 value: `responses`,
               },
+              {
+                keyPath: `model_providers.${remoteProviderId}.name`,
+                value: `Remote endpoint`,
+              },
             );
+          }
+        }""",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    """        } catch (e) {
+          if (!isLocalLlmConsoleConfigVersionConflict(e)) throw e;
+          let t = await r(),
+            n = t?.data?.configWriteTarget ?? null,
+            a = n?.filePath ?? se ?? null,
+            o = n?.expectedVersion ?? null;
+          await i.mutateAsync({
+            filePath: a,
+            expectedVersion: o,
+            edits,
+          });
+        }
+        E((t) => ({ ...W, launchMode: `local` }));
+        ie({
+          currentMode: isRemoteScope ? _e : b(e),
+          hasRemoteSettings: q.length > 0,
+          remoteUrl: q,
+        });
+        if (!isRemoteScope) {
+          U({
+            tone: `success`,
+            text: `Saved runtime configuration. Restarting session...`,
+          });
+          await restartLocalLlmConsoleAppServer({
+            hostId: getCurrentSessionHostId(),
+            provider: a,
+            model: o,
+            reasoning: s,
+          });
+          let e = await r(),
+            t = e?.data?.config ?? {},
+            n = C(t),
+            i = e?.data?.configWriteTarget?.filePath ?? se;
+          E({ ...n, catalogPath: deriveLocalCatalogPath(i, n.catalogPath) });
+          U({
+            tone: `success`,
+            text: `Saved runtime configuration.`,
+          });
+        }""",
+    """        } catch (e) {
+          if (!isLocalLlmConsoleConfigVersionConflict(e)) throw e;
+          let t = await r(),
+            n = t?.data?.configWriteTarget ?? null,
+            a = n?.filePath ?? se ?? null,
+            o = n?.expectedVersion ?? null;
+          await i.mutateAsync({
+            filePath: a,
+            expectedVersion: o,
+            edits,
+          });
+        }
+        invalidateModelCatalogQueries(getCurrentSessionHostId());
+        E((t) => ({ ...W, launchMode: `local` }));
+        ie({
+          currentMode: isRemoteScope ? _e : b(e),
+          hasRemoteSettings: q.length > 0,
+          remoteUrl: q,
+        });
+        if (!isRemoteScope) {
+          U({
+            tone: `success`,
+            text: `Saved runtime configuration. Restarting session...`,
+          });
+          await restartLocalLlmConsoleAppServer({
+            hostId: getCurrentSessionHostId(),
+            provider: a,
+            model: o,
+            reasoning: s,
+          });
+          let e = await r(),
+            t = e?.data?.config ?? {},
+            n = C(t),
+            i = e?.data?.configWriteTarget?.filePath ?? se;
+          E({ ...n, catalogPath: deriveLocalCatalogPath(i, n.catalogPath) });
+          U({
+            tone: `success`,
+            text: `Saved runtime configuration.`,
+          });
         }""",
 )
 PY
