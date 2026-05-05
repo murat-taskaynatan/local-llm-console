@@ -102,7 +102,6 @@ LOCAL_RUNTIME_APP_DIR="${CODEX_DESKTOP_LOCAL_RUNTIME_APP_DIR:-$LOCAL_RUNTIME_ROO
 LOCAL_RUNTIME_STAMP="${LOCAL_RUNTIME_ROOT}/source-stamp.txt"
 LOCAL_SHELL_ASAR_STAMP="${LOCAL_RUNTIME_ROOT}/shell-asar-stamp.txt"
 LOCAL_RUNTIME_ICON_PATH="${CODEX_DESKTOP_WINDOW_ICON_PATH:-$REPO_ROOT/assets/local-ai-console-gradient.png}"
-export LOCAL_TOKENS_PER_SECOND_SOURCE_PATH="${CODEX_DESKTOP_LOCAL_TOKENS_PER_SECOND_SOURCE_PATH:-$REPO_ROOT/webview/assets/local-llm-console-tokens-per-second.js}"
 LOCAL_BOOTSTRAP_SOURCE_PATH="${CODEX_DESKTOP_LOCAL_BOOTSTRAP_SOURCE_PATH:-$REPO_ROOT/webview/assets/local-ai-console-bootstrap.js}"
 LOCAL_SOURCE_ASAR=""
 export CODEX_DESKTOP_POST_LAUNCH_HOOK="${CODEX_DESKTOP_POST_LAUNCH_HOOK:-$SCRIPT_DIR/.codex-linux/local-ai-console-x11-title-fix.sh}"
@@ -538,11 +537,175 @@ replace_optional(
     '"read-config":n9((e,t)=>e.readConfig(t)),"read-config-for-host":i9((e,{hostId:t,...n})=>e.sendRequest(`config/read`,n)),"refresh-remote-connection":async(e,{hostId:t})=>{',
     '"read-config":n9((e,t)=>e.readConfig(t)),"read-config-for-host":i9((e,{hostId:t,...n})=>e.sendRequest(`config/read`,n)),"refresh-remote-connections":async()=>Qe(`refresh-remote-connections`,{params:{}}),"refresh-remote-control-connections":async()=>Qe(`refresh-remote-control-connections`,{params:{}}),"save-codex-managed-remote-ssh-connections":async(e,t)=>Qe(`save-codex-managed-remote-ssh-connections`,{params:t??{}}),"set-remote-connection-auto-connect":async(e,t)=>Qe(`set-remote-connection-auto-connect`,{params:t??{}}),"refresh-remote-connection":async(e,{hostId:t})=>{',
 )
+replace_optional(
+    runtime_index_bundle,
+    "case`plugins-settings`:return i===`extension`&&r;",
+    "case`plugins-settings`:return i===`extension`&&r||i===`electron`;",
+)
+replace_optional(
+    runtime_index_bundle,
+    "case`skills-settings`:return i===`extension`&&!r;",
+    "case`skills-settings`:return i===`extension`&&!r||i===`electron`;",
+)
+replace_optional(
+    runtime_index_bundle,
+    "children:(0,$.jsx)(Z.Suspense,{children:(0,$.jsx)(p,{},v)})",
+    "children:(0,$.jsx)(Z.Suspense,{children:(0,$.jsx)(p,{},`${i}:${v}`)})",
+)
+
+runtime_settings_sections_bundle = next((root / "webview" / "assets").glob("settings-sections-*.js"), None)
+if runtime_settings_sections_bundle is None:
+    raise SystemExit("Local desktop runtime patch failed: runtime settings-sections bundle not found")
+replace_optional(
+    runtime_settings_sections_bundle,
+    "    { slug: `mcp-settings` },\n    { slug: `data-controls` },",
+    "    { slug: `mcp-settings` },\n    { slug: `plugins-settings` },\n    { slug: `data-controls` },",
+)
+replace_optional(
+    runtime_settings_sections_bundle,
+    "    { slug: `plugins-settings` },\n    { slug: `data-controls` },",
+    "    { slug: `plugins-settings` },\n    { slug: `skills-settings` },\n    { slug: `data-controls` },",
+)
+
+runtime_settings_shared_bundle = next((root / "webview" / "assets").glob("settings-shared-*.js"), None)
+if runtime_settings_shared_bundle is None:
+    raise SystemExit("Local desktop runtime patch failed: runtime settings-shared bundle not found")
+replace_optional(
+    runtime_settings_shared_bundle,
+    """  "mcp-settings": {
+    id: `settings.nav.mcp-settings`,
+    defaultMessage: `MCP servers`,
+    description: `Title for MCP servers settings section`,
+  },
+  connections: {""",
+    """  "mcp-settings": {
+    id: `settings.nav.mcp-settings`,
+    defaultMessage: `MCP servers`,
+    description: `Title for MCP servers settings section`,
+  },
+  "plugins-settings": {
+    id: `settings.nav.plugins-settings`,
+    defaultMessage: `Plugins`,
+    description: `Title for plugins settings section`,
+  },
+  connections: {""",
+)
+replace_optional(
+    runtime_settings_shared_bundle,
+    """  "plugins-settings": {
+    id: `settings.nav.plugins-settings`,
+    defaultMessage: `Plugins`,
+    description: `Title for plugins settings section`,
+  },
+  connections: {""",
+    """  "plugins-settings": {
+    id: `settings.nav.plugins-settings`,
+    defaultMessage: `Plugins`,
+    description: `Title for plugins settings section`,
+  },
+  "skills-settings": {
+    id: `settings.nav.skills-settings`,
+    defaultMessage: `Skills`,
+    description: `Title for skills settings section`,
+  },
+  connections: {""",
+)
+replace_optional(
+    runtime_settings_shared_bundle,
+    """    case `mcp-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.mcp-settings`,
+        defaultMessage: `MCP servers`,
+        description: `Title for MCP servers settings section`,
+      });
+    case `connections`:""",
+    """    case `mcp-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.mcp-settings`,
+        defaultMessage: `MCP servers`,
+        description: `Title for MCP servers settings section`,
+      });
+    case `plugins-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.plugins-settings`,
+        defaultMessage: `Plugins`,
+        description: `Title for plugins settings section`,
+      });
+    case `connections`:""",
+)
+replace_optional(
+    runtime_settings_shared_bundle,
+    """    case `plugins-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.plugins-settings`,
+        defaultMessage: `Plugins`,
+        description: `Title for plugins settings section`,
+      });
+    case `connections`:""",
+    """    case `plugins-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.plugins-settings`,
+        defaultMessage: `Plugins`,
+        description: `Title for plugins settings section`,
+      });
+    case `skills-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.skills-settings`,
+        defaultMessage: `Skills`,
+        description: `Title for skills settings section`,
+      });
+    case `connections`:""",
+)
+
+runtime_plugins_page_bundle = next((root / "webview" / "assets").glob("plugins-page-*.js"), None)
+if runtime_plugins_page_bundle is None:
+    raise SystemExit("Local desktop runtime patch failed: runtime plugins-page bundle not found")
+replace_optional(
+    runtime_plugins_page_bundle,
+    "function Cs(e){if(typeof e!=`object`||!e)return{initialTab:`skills`};let t=Reflect.get(e,`initialTab`),n=t===`skills`||t===`apps`||t===`mcps`?t:`skills`,",
+    "function Cs(e){if(typeof e!=`object`||!e)return{initialTab:`plugins`};let t=Reflect.get(e,`initialTab`),n=t===`skills`||t===`apps`||t===`mcps`||t===`plugins`?t:`plugins`,",
+)
+replace_optional(
+    runtime_plugins_page_bundle,
+    "t[47]!==a||t[48]!==s?(c=[s],t[47]=a,t[48]=s,t[49]=c):c=t[49];",
+    "t[47]!==a||t[48]!==s?(c=[a,s],t[47]=a,t[48]=s,t[49]=c):c=t[49];",
+)
+replace_optional(
+    runtime_plugins_page_bundle,
+    "t[20]!==u||t[21]!==f||t[22]!==m||t[23]!==g?(_=[f,m,g],t[20]=u,t[21]=f,t[22]=m,t[23]=g,t[24]=_):_=t[24];",
+    "t[20]!==u||t[21]!==f||t[22]!==m||t[23]!==g?(_=[u,f,m,g],t[20]=u,t[21]=f,t[22]=m,t[23]=g,t[24]=_):_=t[24];",
+)
 
 runtime_local_models_bundle = next((root / "webview" / "assets").glob("local-models-settings-*.js"), None)
 if runtime_local_models_bundle is None:
     print("WARN: Local desktop runtime patch failed: runtime local-models settings bundle not found")
 else:
+    def flatten_configuration_provider_tile(path: Path, error_message: str) -> None:
+        text = path.read_text()
+        provider = text.find("label: `Provider`,")
+        if provider < 0:
+            raise SystemExit(error_message)
+        tile_start = "(0, m.jsxs)(TileGroup, {\n                position: `top`,"
+        flat_start = "(0, m.jsxs)(`div`, {\n                className: `flex flex-col`,"
+        start = text.rfind(tile_start, 0, provider)
+        if start >= 0:
+            text = text[:start] + flat_start + text[start + len(tile_start):]
+        elif text.rfind(flat_start, 0, provider) < 0:
+            raise SystemExit(error_message)
+        middle_group = "(0, m.jsxs)(TileGroup, {\n                position: `middle`,"
+        top_group = "(0, m.jsxs)(TileGroup, {\n                position: `top`,"
+        next_group = text.find(middle_group, provider)
+        if next_group >= 0:
+            text = text[:next_group] + top_group + text[next_group + len(middle_group):]
+        elif text.find(top_group, provider) < 0:
+            raise SystemExit(error_message)
+        path.write_text(text)
+
+    flatten_configuration_provider_tile(
+        runtime_local_models_bundle,
+        "Local desktop runtime patch failed: configuration provider tile snippet not found",
+    )
+
     replace_optional(
         runtime_local_models_bundle,
         """async function loadManagedRemoteSessionConnections() {
@@ -618,6 +781,52 @@ function mergeManagedRemoteSessionConnections(e, t) {
     );
   return n;
 }""",
+    )
+
+    if "function publishLocalLlmConsoleProvider" not in runtime_local_models_bundle.read_text():
+        replace_optional(
+            runtime_local_models_bundle,
+            """function L(e) {
+  return JSON.stringify(e);
+}""",
+            """function publishLocalLlmConsoleProvider(e) {
+  let t = z(e);
+  if (typeof window == `undefined`) return t;
+  try {
+        window.__localLLMConsoleProvider = t;
+        window.sessionStorage?.setItem(`local-llm-console-provider`, t);
+        window.localStorage?.setItem(`local-llm-console-provider`, t);
+        window.dispatchEvent(
+          new CustomEvent(`local-llm-console-provider-changed`, {
+            detail: { provider: t },
+          }),
+        );
+  } catch {}
+  return t;
+}
+
+function L(e) {
+  return JSON.stringify(e);
+}""",
+        )
+    replace_optional(
+        runtime_local_models_bundle,
+        """  (0, p.useEffect)(() => {
+    E(ye);
+    U((e) => (e != null && e.tone === `success` ? e : null));
+    oe(null);
+  }, [L(ye)]);""",
+        """  (0, p.useEffect)(() => {
+    E(ye);
+    publishLocalLlmConsoleProvider(ye.provider);
+    U((e) => (e != null && e.tone === `success` ? e : null));
+    oe(null);
+  }, [L(ye)]);""",
+    )
+    replace_optional(
+        runtime_local_models_bundle,
+        "let n = z(e);",
+        "let n = publishLocalLlmConsoleProvider(e);",
     )
 
 replace_once(
@@ -713,7 +922,6 @@ if workspace_root_drop_handler_bundle is not None:
 
 runtime_webview_text = runtime_webview_index.read_text()
 runtime_settings_script_hash = "sha256-E2isW5LIwE3Wbjd98bmFq8L3MGT0cyYcsqNRWufMnbA="
-runtime_tokens_script_tag = '    <script src="./assets/local-llm-console-tokens-per-second.js?v=20260425a"></script>\n'
 runtime_bootstrap_script_tag = '    <script src="./assets/local-ai-console-bootstrap.js"></script>\n'
 runtime_settings_script = """    <script>
       (() => {
@@ -798,22 +1006,6 @@ if "./assets/local-ai-console-bootstrap.js" not in runtime_webview_text:
         1,
     )
 
-if "./assets/local-llm-console-tokens-per-second.js" not in runtime_webview_text:
-    if runtime_bootstrap_script_tag in runtime_webview_text:
-        runtime_webview_text = runtime_webview_text.replace(
-            runtime_bootstrap_script_tag,
-            f"{runtime_tokens_script_tag}{runtime_bootstrap_script_tag}",
-            1,
-        )
-    elif "</body>" in runtime_webview_text:
-        runtime_webview_text = runtime_webview_text.replace(
-            "</body>",
-            f"{runtime_tokens_script_tag}{runtime_bootstrap_script_tag}</body>",
-            1,
-        )
-    else:
-        raise SystemExit("Local desktop runtime patch failed: runtime webview body end snippet not found")
-
 if runtime_settings_script_hash not in runtime_webview_text:
     if runtime_settings_csp_original in runtime_webview_text:
         runtime_webview_text = runtime_webview_text.replace(
@@ -834,15 +1026,12 @@ runtime_webview_index.write_text(runtime_webview_text)
 
 runtime_webview_assets = root / "webview" / "assets"
 runtime_icon_source = Path(os.environ["LOCAL_RUNTIME_ICON_PATH"])
-runtime_tokens_source = Path(os.environ["LOCAL_TOKENS_PER_SECOND_SOURCE_PATH"])
 runtime_bootstrap_source = Path(os.environ["LOCAL_BOOTSTRAP_SOURCE_PATH"])
 runtime_icon_target = runtime_webview_assets / "local-ai-console-gradient.png"
 if runtime_icon_source.exists():
     runtime_icon_target.write_bytes(runtime_icon_source.read_bytes())
     packaged_runtime_icon_target = runtime_webview_assets / "app-D0g8sCle.png"
     packaged_runtime_icon_target.write_bytes(runtime_icon_source.read_bytes())
-if runtime_tokens_source.exists():
-    (runtime_webview_assets / "local-llm-console-tokens-per-second.js").write_bytes(runtime_tokens_source.read_bytes())
 if runtime_bootstrap_source.exists():
     (runtime_webview_assets / "local-ai-console-bootstrap.js").write_bytes(runtime_bootstrap_source.read_bytes())
 
@@ -1391,13 +1580,181 @@ patch_text_file(
             '"read-config":n9((e,t)=>e.readConfig(t)),"read-config-for-host":i9((e,{hostId:t,...n})=>e.sendRequest(`config/read`,n)),"refresh-remote-connection":async(e,{hostId:t})=>{',
             '"read-config":n9((e,t)=>e.readConfig(t)),"read-config-for-host":i9((e,{hostId:t,...n})=>e.sendRequest(`config/read`,n)),"refresh-remote-connections":async()=>Qe(`refresh-remote-connections`,{params:{}}),"refresh-remote-control-connections":async()=>Qe(`refresh-remote-control-connections`,{params:{}}),"save-codex-managed-remote-ssh-connections":async(e,t)=>Qe(`save-codex-managed-remote-ssh-connections`,{params:t??{}}),"set-remote-connection-auto-connect":async(e,t)=>Qe(`set-remote-connection-auto-connect`,{params:t??{}}),"refresh-remote-connection":async(e,{hostId:t})=>{',
         ),
+        (
+            "case`plugins-settings`:return i===`extension`&&r;",
+            "case`plugins-settings`:return i===`extension`&&r||i===`electron`;",
+        ),
+        (
+            "case`skills-settings`:return i===`extension`&&!r;",
+            "case`skills-settings`:return i===`extension`&&!r||i===`electron`;",
+        ),
+        (
+            "children:(0,$.jsx)(Z.Suspense,{children:(0,$.jsx)(p,{},v)})",
+            "children:(0,$.jsx)(Z.Suspense,{children:(0,$.jsx)(p,{},`${i}:${v}`)})",
+        ),
     ],
     error_message="Local desktop webview patch failed: remote connection request handlers snippet not found",
 )
 
+settings_sections_bundle = next((target / "assets").glob("settings-sections-*.js"), None)
+if settings_sections_bundle is None:
+    raise SystemExit("Local desktop webview patch failed: settings-sections bundle not found")
+patch_text_file(
+    settings_sections_bundle,
+    [
+        (
+            "    { slug: `mcp-settings` },\n    { slug: `data-controls` },",
+            "    { slug: `mcp-settings` },\n    { slug: `plugins-settings` },\n    { slug: `data-controls` },",
+        ),
+        (
+            "    { slug: `plugins-settings` },\n    { slug: `data-controls` },",
+            "    { slug: `plugins-settings` },\n    { slug: `skills-settings` },\n    { slug: `data-controls` },",
+        ),
+    ],
+    error_message="Local desktop webview patch failed: settings section registry snippet not found",
+)
+
+settings_shared_bundle = next((target / "assets").glob("settings-shared-*.js"), None)
+if settings_shared_bundle is None:
+    raise SystemExit("Local desktop webview patch failed: settings-shared bundle not found")
+replace_optional(
+    settings_shared_bundle,
+    """  "mcp-settings": {
+    id: `settings.nav.mcp-settings`,
+    defaultMessage: `MCP servers`,
+    description: `Title for MCP servers settings section`,
+  },
+  connections: {""",
+    """  "mcp-settings": {
+    id: `settings.nav.mcp-settings`,
+    defaultMessage: `MCP servers`,
+    description: `Title for MCP servers settings section`,
+  },
+  "plugins-settings": {
+    id: `settings.nav.plugins-settings`,
+    defaultMessage: `Plugins`,
+    description: `Title for plugins settings section`,
+  },
+  connections: {""",
+)
+replace_optional(
+    settings_shared_bundle,
+    """  "plugins-settings": {
+    id: `settings.nav.plugins-settings`,
+    defaultMessage: `Plugins`,
+    description: `Title for plugins settings section`,
+  },
+  connections: {""",
+    """  "plugins-settings": {
+    id: `settings.nav.plugins-settings`,
+    defaultMessage: `Plugins`,
+    description: `Title for plugins settings section`,
+  },
+  "skills-settings": {
+    id: `settings.nav.skills-settings`,
+    defaultMessage: `Skills`,
+    description: `Title for skills settings section`,
+  },
+  connections: {""",
+)
+replace_optional(
+    settings_shared_bundle,
+    """    case `mcp-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.mcp-settings`,
+        defaultMessage: `MCP servers`,
+        description: `Title for MCP servers settings section`,
+      });
+    case `connections`:""",
+    """    case `mcp-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.mcp-settings`,
+        defaultMessage: `MCP servers`,
+        description: `Title for MCP servers settings section`,
+      });
+    case `plugins-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.plugins-settings`,
+        defaultMessage: `Plugins`,
+        description: `Title for plugins settings section`,
+      });
+    case `connections`:""",
+)
+replace_optional(
+    settings_shared_bundle,
+    """    case `plugins-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.plugins-settings`,
+        defaultMessage: `Plugins`,
+        description: `Title for plugins settings section`,
+      });
+    case `connections`:""",
+    """    case `plugins-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.plugins-settings`,
+        defaultMessage: `Plugins`,
+        description: `Title for plugins settings section`,
+      });
+    case `skills-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.skills-settings`,
+        defaultMessage: `Skills`,
+        description: `Title for skills settings section`,
+      });
+    case `connections`:""",
+)
+
+plugins_page_bundle = next((target / "assets").glob("plugins-page-*.js"), None)
+if plugins_page_bundle is None:
+    raise SystemExit("Local desktop webview patch failed: plugins-page bundle not found")
+patch_text_file(
+    plugins_page_bundle,
+    [
+        (
+            "function Cs(e){if(typeof e!=`object`||!e)return{initialTab:`skills`};let t=Reflect.get(e,`initialTab`),n=t===`skills`||t===`apps`||t===`mcps`?t:`skills`,",
+            "function Cs(e){if(typeof e!=`object`||!e)return{initialTab:`plugins`};let t=Reflect.get(e,`initialTab`),n=t===`skills`||t===`apps`||t===`mcps`||t===`plugins`?t:`plugins`,",
+        ),
+        (
+            "t[47]!==a||t[48]!==s?(c=[s],t[47]=a,t[48]=s,t[49]=c):c=t[49];",
+            "t[47]!==a||t[48]!==s?(c=[a,s],t[47]=a,t[48]=s,t[49]=c):c=t[49];",
+        ),
+        (
+            "t[20]!==u||t[21]!==f||t[22]!==m||t[23]!==g?(_=[f,m,g],t[20]=u,t[21]=f,t[22]=m,t[23]=g,t[24]=_):_=t[24];",
+            "t[20]!==u||t[21]!==f||t[22]!==m||t[23]!==g?(_=[u,f,m,g],t[20]=u,t[21]=f,t[22]=m,t[23]=g,t[24]=_):_=t[24];",
+        ),
+    ],
+    error_message="Local desktop webview patch failed: plugins-page tab snippets not found",
+)
+
+def flatten_configuration_provider_tile(path: Path, error_message: str) -> None:
+    text = path.read_text()
+    provider = text.find("label: `Provider`,")
+    if provider < 0:
+        raise SystemExit(error_message)
+    tile_start = "(0, m.jsxs)(TileGroup, {\n                position: `top`,"
+    flat_start = "(0, m.jsxs)(`div`, {\n                className: `flex flex-col`,"
+    start = text.rfind(tile_start, 0, provider)
+    if start >= 0:
+        text = text[:start] + flat_start + text[start + len(tile_start):]
+    elif text.rfind(flat_start, 0, provider) < 0:
+        raise SystemExit(error_message)
+    middle_group = "(0, m.jsxs)(TileGroup, {\n                position: `middle`,"
+    top_group = "(0, m.jsxs)(TileGroup, {\n                position: `top`,"
+    next_group = text.find(middle_group, provider)
+    if next_group >= 0:
+        text = text[:next_group] + top_group + text[next_group + len(middle_group):]
+    elif text.find(top_group, provider) < 0:
+        raise SystemExit(error_message)
+    path.write_text(text)
+
 local_models_bundle = next((target / "assets").glob("local-models-settings-*.js"), None)
 if local_models_bundle is None:
     raise SystemExit("Local desktop webview patch failed: local-models settings bundle not found")
+
+flatten_configuration_provider_tile(
+    local_models_bundle,
+    "Local desktop webview patch failed: configuration provider tile snippet not found",
+)
 
 patch_text_file(
     local_models_bundle,
@@ -1474,6 +1831,23 @@ function mergeManagedRemoteSessionConnections(e, t) {
     );
   return n;
 }""",
+        ),
+        (
+            """  (0, p.useEffect)(() => {
+    E(ye);
+    U((e) => (e != null && e.tone === `success` ? e : null));
+    oe(null);
+  }, [L(ye)]);""",
+            """  (0, p.useEffect)(() => {
+    E(ye);
+    publishLocalLlmConsoleProvider(ye.provider);
+    U((e) => (e != null && e.tone === `success` ? e : null));
+    oe(null);
+  }, [L(ye)]);""",
+        ),
+        (
+            "let n = z(e);",
+            "let n = publishLocalLlmConsoleProvider(e);",
         ),
     ],
     error_message="Local desktop webview patch failed: host service helper snippet not found",

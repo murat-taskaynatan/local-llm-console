@@ -13,6 +13,25 @@
     /continue with (?:the )?current model/i,
     /learn more/i,
   ];
+  const UPDATE_CONTROL_LABELS = new Set([
+    `Update`,
+    `Downloading update`,
+    `Install update`,
+    `Restart to update`,
+    `Update Local LLM Console`,
+    `Update Local LLM Console now?`,
+  ]);
+  const PROVIDER_STATE_KEY = `local-llm-console-provider`;
+  const PROVIDER_STATE_EVENT = `local-llm-console-provider-changed`;
+  const PLUGINS_SETTINGS_PATH = `/settings/plugins-settings`;
+  const PROVIDER_LABELS = new Map([
+    [`ollama`, `ollama`],
+    [`lm studio`, `lmstudio`],
+    [`remote endpoint`, `remote`],
+    [`openai`, `codex`],
+    [`codex`, `codex`],
+    [`codex cloud`, `codex`],
+  ]);
   const ROOT_SELECTORS = [
     `[role="dialog"]`,
     `dialog`,
@@ -37,6 +56,214 @@
     const hasPrimary = ANNOUNCEMENT_PRIMARY_PATTERNS.some((pattern) => pattern.test(text));
     const hasAction = ANNOUNCEMENT_ACTION_PATTERNS.some((pattern) => pattern.test(text));
     return hasPrimary && hasAction;
+  }
+
+  function isUpdateControlText(value) {
+    const text = normalizeText(value);
+    return UPDATE_CONTROL_LABELS.has(text);
+  }
+
+  function isUpdateControl(element) {
+    if (!(element instanceof HTMLElement)) {
+      return false;
+    }
+    const role = element.getAttribute(`role`) || ``;
+    const tagName = element.tagName.toLowerCase();
+    if (tagName !== `button` && role !== `button` && role !== `menuitem`) {
+      return false;
+    }
+    return isUpdateControlText(element.getAttribute(`aria-label`)) || isUpdateControlText(element.textContent);
+  }
+
+  function suppressUpdateControl(element) {
+    if (!(element instanceof HTMLElement) || element.dataset.localLlmConsoleUpdateSuppressed === `true`) {
+      return;
+    }
+    element.dataset.localLlmConsoleUpdateSuppressed = `true`;
+    element.setAttribute(`aria-hidden`, `true`);
+    element.style.setProperty(`display`, `none`, `important`);
+  }
+
+  function normalizeProvider(value) {
+    const text = normalizeText(value).toLowerCase();
+    if (!text) {
+      return ``;
+    }
+    return PROVIDER_LABELS.get(text) ?? ``;
+  }
+
+  function setProviderState(provider) {
+    const normalized = normalizeProvider(provider) || normalizeText(provider).toLowerCase();
+    if (!normalized) {
+      return ``;
+    }
+    try {
+      window.__localLLMConsoleProvider = normalized;
+      window.sessionStorage?.setItem(PROVIDER_STATE_KEY, normalized);
+      window.localStorage?.setItem(PROVIDER_STATE_KEY, normalized);
+    } catch {}
+    return normalized;
+  }
+
+  function getProviderState() {
+    try {
+      return (
+        normalizeProvider(window.__localLLMConsoleProvider) ||
+        normalizeProvider(window.sessionStorage?.getItem(PROVIDER_STATE_KEY)) ||
+        normalizeProvider(window.localStorage?.getItem(PROVIDER_STATE_KEY)) ||
+        normalizeText(window.__localLLMConsoleProvider).toLowerCase() ||
+        normalizeText(window.sessionStorage?.getItem(PROVIDER_STATE_KEY)).toLowerCase() ||
+        normalizeText(window.localStorage?.getItem(PROVIDER_STATE_KEY)).toLowerCase()
+      );
+    } catch {
+      return ``;
+    }
+  }
+
+  function scanProviderState(root) {
+    if (!(root instanceof Element)) {
+      return;
+    }
+    const candidates = [];
+    if (root.matches?.(`button,[role="button"],[aria-label],span`)) {
+      candidates.push(root);
+    }
+    root.querySelectorAll?.(`button,[role="button"],[aria-label],span`).forEach((element) => {
+      candidates.push(element);
+    });
+    for (const candidate of candidates) {
+      if (!(candidate instanceof HTMLElement)) {
+        continue;
+      }
+      if (candidate.closest(`[data-radix-popper-content-wrapper],[data-radix-portal]`)) {
+        continue;
+      }
+      const provider = normalizeProvider(candidate.getAttribute(`aria-label`)) || normalizeProvider(candidate.textContent);
+      if (provider) {
+        setProviderState(provider);
+      }
+    }
+  }
+
+  function isCodexCloudProviderSelected() {
+    return getProviderState() === `codex`;
+  }
+
+  function isPluginSettingsElement(element) {
+    if (!(element instanceof HTMLElement)) {
+      return false;
+    }
+    if (element.dataset.localLlmConsolePluginsNav === `true`) {
+      return true;
+    }
+    const link = element.closest(`a[href*="plugins-settings"]`);
+    if (link instanceof HTMLElement) {
+      return true;
+    }
+    return normalizeText(element.textContent) === `Plugins`;
+  }
+
+  function findSettingsNavButton(label) {
+    for (const element of document.querySelectorAll(`button,[role="button"],a,[role="link"]`)) {
+      if (element instanceof HTMLElement && normalizeText(element.textContent) === label) {
+        return element;
+      }
+    }
+    return null;
+  }
+
+  function createInjectedPluginSettingsButton(reference) {
+    const button = document.createElement(`button`);
+    button.type = `button`;
+    button.dataset.localLlmConsolePluginsNav = `true`;
+    button.setAttribute(`aria-label`, `Plugins`);
+    button.textContent = `Plugins`;
+    if (reference instanceof HTMLElement) {
+      button.className = reference.className;
+    } else {
+      button.className =
+        `group relative flex w-full items-center rounded-lg px-row-x py-row-y text-base outline-none cursor-interaction text-token-text-secondary hover:bg-token-list-hover-background focus-visible:ring-token-focus focus-visible:ring-1`;
+    }
+    button.addEventListener(`click`, () => openLocalSettings(`plugins-settings`));
+    return button;
+  }
+
+  function ensureInjectedPluginSettingsButton(visible) {
+    const injected = document.querySelector(`[data-local-llm-console-plugins-nav="true"]`);
+    if (!visible) {
+      injected?.remove();
+      return;
+    }
+    const nativePluginsButton = Array.from(document.querySelectorAll(`button,[role="button"],a,[role="link"]`)).find(
+      (element) =>
+        element instanceof HTMLElement &&
+        element.dataset.localLlmConsolePluginsNav !== `true` &&
+        isPluginSettingsElement(element),
+    );
+    if (nativePluginsButton instanceof HTMLElement) {
+      injected?.remove();
+      return;
+    }
+    if (injected instanceof HTMLElement) {
+      injected.style.removeProperty(`display`);
+      injected.removeAttribute(`aria-hidden`);
+      return;
+    }
+    const reference =
+      findSettingsNavButton(`MCP servers`) ??
+      findSettingsNavButton(`Computer use`) ??
+      findSettingsNavButton(`Configuration`);
+    const parent = reference?.parentElement;
+    if (!(reference instanceof HTMLElement) || !(parent instanceof HTMLElement)) {
+      return;
+    }
+    reference.insertAdjacentElement(`afterend`, createInjectedPluginSettingsButton(reference));
+  }
+
+  function setPluginSettingsElementVisible(element, visible) {
+    const target = element.closest(`a[href*="plugins-settings"]`) ?? element;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    if (visible) {
+      if (target.dataset.localLlmConsolePluginsHidden === `true`) {
+        target.style.removeProperty(`display`);
+        target.removeAttribute(`aria-hidden`);
+        delete target.dataset.localLlmConsolePluginsHidden;
+      }
+      return;
+    }
+    target.dataset.localLlmConsolePluginsHidden = `true`;
+    target.setAttribute(`aria-hidden`, `true`);
+    target.style.setProperty(`display`, `none`, `important`);
+  }
+
+  function updatePluginSettingsVisibility(root = document) {
+    const visible = isCodexCloudProviderSelected();
+    const searchRoot = root instanceof Element || root instanceof Document ? root : document;
+    searchRoot.querySelectorAll?.(`a[href*="plugins-settings"],button,[role="button"],[role="link"]`).forEach((element) => {
+      if (isPluginSettingsElement(element)) {
+        setPluginSettingsElementVisible(element, visible);
+      }
+    });
+    ensureInjectedPluginSettingsButton(visible);
+    if (!visible && window.location.pathname.startsWith(PLUGINS_SETTINGS_PATH)) {
+      openLocalSettings(`local-models`);
+    }
+  }
+
+  function scanUpdateControls(root) {
+    if (!(root instanceof Element)) {
+      return;
+    }
+    if (isUpdateControl(root)) {
+      suppressUpdateControl(root);
+    }
+    root.querySelectorAll(`button,[role="button"],[role="menuitem"]`).forEach((candidate) => {
+      if (isUpdateControl(candidate)) {
+        suppressUpdateControl(candidate);
+      }
+    });
   }
 
   function currentWindowHostId() {
@@ -226,6 +453,9 @@
     if (!(node instanceof Element)) {
       return;
     }
+    scanProviderState(node);
+    scanUpdateControls(node);
+    updatePluginSettingsVisibility(document);
     if (isAnnouncementText(node.textContent)) {
       suppressAnnouncement(node);
       return;
@@ -248,6 +478,10 @@
         }
         if (mutation.type === `characterData`) {
           const parent = mutation.target.parentElement;
+          if (parent) {
+            scanProviderState(parent);
+            updatePluginSettingsVisibility(document);
+          }
           if (parent && isAnnouncementText(parent.textContent)) {
             suppressAnnouncement(parent);
           }
@@ -256,6 +490,7 @@
     });
 
     scanNode(document.body);
+    window.addEventListener(PROVIDER_STATE_EVENT, () => scanNode(document.body));
     observer.observe(document.documentElement, {
       childList: true,
       characterData: true,

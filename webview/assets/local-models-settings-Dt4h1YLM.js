@@ -204,6 +204,22 @@ function C(e, t = O) {
   };
 }
 
+function publishLocalLlmConsoleProvider(e) {
+  let t = z(e);
+  if (typeof window == `undefined`) return t;
+  try {
+    window.__localLLMConsoleProvider = t;
+    window.sessionStorage?.setItem(`local-llm-console-provider`, t);
+    window.localStorage?.setItem(`local-llm-console-provider`, t);
+    window.dispatchEvent(
+      new CustomEvent(`local-llm-console-provider-changed`, {
+        detail: { provider: t },
+      }),
+    );
+  } catch {}
+  return t;
+}
+
 function L(e) {
   return JSON.stringify(e);
 }
@@ -1492,8 +1508,8 @@ function RuntimeSettingsContent(props = {}) {
         : (0, m.jsxs)(`div`, {
             className: `flex flex-col`,
             children: [
-              (0, m.jsxs)(TileGroup, {
-                position: `top`,
+              (0, m.jsxs)(`div`, {
+                className: `flex flex-col`,
                 children: [
                   (0, m.jsx)(c, {
                     label: `Provider`,
@@ -1506,7 +1522,7 @@ function RuntimeSettingsContent(props = {}) {
                         value: w.provider,
                         onChange: (e) => {
                           E((t) => {
-                            let n = z(e);
+                            let n = publishLocalLlmConsoleProvider(e);
                             return {
                               ...t,
                               provider: n,
@@ -1553,7 +1569,7 @@ function RuntimeSettingsContent(props = {}) {
                 ],
               }),
               (0, m.jsxs)(TileGroup, {
-                position: `middle`,
+                position: `top`,
                 children: [
                   (0, m.jsx)(c, {
                     label:
@@ -1734,6 +1750,7 @@ function RuntimeSettingsContent(props = {}) {
 
   (0, p.useEffect)(() => {
     E(ye);
+    publishLocalLlmConsoleProvider(ye.provider);
     U((e) => (e != null && e.tone === `success` ? e : null));
     oe(null);
   }, [L(ye)]);

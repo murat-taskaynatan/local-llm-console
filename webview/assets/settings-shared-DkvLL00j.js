@@ -50,6 +50,16 @@ var c = n({
     defaultMessage: `MCP servers`,
     description: `Title for MCP servers settings section`,
   },
+  "plugins-settings": {
+    id: `settings.nav.plugins-settings`,
+    defaultMessage: `Plugins`,
+    description: `Title for plugins settings section`,
+  },
+  "skills-settings": {
+    id: `settings.nav.skills-settings`,
+    defaultMessage: `Skills`,
+    description: `Title for skills settings section`,
+  },
   connections: {
     id: `settings.nav.connections`,
     defaultMessage: `Connections`,
@@ -142,6 +152,18 @@ function p(e) {
         id: `settings.section.mcp-settings`,
         defaultMessage: `MCP servers`,
         description: `Title for MCP servers settings section`,
+      });
+    case `plugins-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.plugins-settings`,
+        defaultMessage: `Plugins`,
+        description: `Title for plugins settings section`,
+      });
+    case `skills-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.skills-settings`,
+        defaultMessage: `Skills`,
+        description: `Title for skills settings section`,
       });
     case `connections`:
       return (0, u.jsx)(t, {

@@ -353,7 +353,6 @@ start_app_server() {
   log "starting codex app-server listen=${HOST_LISTEN_URL} provider=${LOCAL_PROVIDER}"
   nohup "$CODEX_HELPER" \
     app-server \
-    --disable plugins \
     --listen "$HOST_LISTEN_URL" \
     >>"$LOG_FILE" 2>&1 </dev/null &
   echo "$!" >"$PID_FILE"

@@ -184,10 +184,8 @@ if [[ "${1:-}" == "app-server" ]]; then
     shift
     exec "$CODEX_HELPER" \
       app-server \
-      --disable plugins \
       "$@"
 fi
 
 exec "$CODEX_HELPER" \
-  --disable plugins \
   "$@"

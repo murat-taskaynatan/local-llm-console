@@ -407,12 +407,6 @@ replace_optional(
     "<title>Codex</title>",
     "<title>Local LLM Console</title>",
 )
-replace_optional(
-    runtime_webview_index,
-    '    <script src="./assets/local-ai-console-bootstrap.js?v=20260424c"></script>',
-    '    <script src="./assets/local-llm-console-tokens-per-second.js?v=20260425a"></script>\n    <script src="./assets/local-ai-console-bootstrap.js?v=20260424c"></script>',
-)
-
 runtime_index_bundle = next((root / "webview" / "assets").glob("index-*.js"), None)
 if runtime_index_bundle is None:
     raise SystemExit("macOS dist patch failed: runtime index bundle not found")
@@ -430,6 +424,144 @@ replace_optional(
     runtime_index_bundle,
     "function $T(){let e=(0,Q.c)(3),{authMethod:t,requiresAuth:n,isLoading:r}=$f();if(r){let t;return e[0]===Symbol.for(`react.memo_cache_sentinel`)?(t=(0,$.jsx)($.Fragment,{}),e[0]=t):t=e[0],t}if(t||!n){",
     "function $T(){let e=(0,Q.c)(3),{authMethod:t,requiresAuth:n,isLoading:r}=$f();if(wf()===`electron`||r||t||!n){",
+)
+replace_optional(
+    runtime_index_bundle,
+    "case`plugins-settings`:return i===`extension`&&r;",
+    "case`plugins-settings`:return i===`extension`&&r||i===`electron`;",
+)
+replace_optional(
+    runtime_index_bundle,
+    "case`skills-settings`:return i===`extension`&&!r;",
+    "case`skills-settings`:return i===`extension`&&!r||i===`electron`;",
+)
+replace_optional(
+    runtime_index_bundle,
+    "children:(0,$.jsx)(Z.Suspense,{children:(0,$.jsx)(p,{},v)})",
+    "children:(0,$.jsx)(Z.Suspense,{children:(0,$.jsx)(p,{},`${i}:${v}`)})",
+)
+
+runtime_settings_sections_bundle = next((root / "webview" / "assets").glob("settings-sections-*.js"), None)
+if runtime_settings_sections_bundle is None:
+    raise SystemExit("macOS dist patch failed: runtime settings-sections bundle not found")
+replace_optional(
+    runtime_settings_sections_bundle,
+    "    { slug: `mcp-settings` },\n    { slug: `data-controls` },",
+    "    { slug: `mcp-settings` },\n    { slug: `plugins-settings` },\n    { slug: `data-controls` },",
+)
+replace_optional(
+    runtime_settings_sections_bundle,
+    "    { slug: `plugins-settings` },\n    { slug: `data-controls` },",
+    "    { slug: `plugins-settings` },\n    { slug: `skills-settings` },\n    { slug: `data-controls` },",
+)
+
+runtime_settings_shared_bundle = next((root / "webview" / "assets").glob("settings-shared-*.js"), None)
+if runtime_settings_shared_bundle is None:
+    raise SystemExit("macOS dist patch failed: runtime settings-shared bundle not found")
+replace_optional(
+    runtime_settings_shared_bundle,
+    """  "mcp-settings": {
+    id: `settings.nav.mcp-settings`,
+    defaultMessage: `MCP servers`,
+    description: `Title for MCP servers settings section`,
+  },
+  connections: {""",
+    """  "mcp-settings": {
+    id: `settings.nav.mcp-settings`,
+    defaultMessage: `MCP servers`,
+    description: `Title for MCP servers settings section`,
+  },
+  "plugins-settings": {
+    id: `settings.nav.plugins-settings`,
+    defaultMessage: `Plugins`,
+    description: `Title for plugins settings section`,
+  },
+  connections: {""",
+)
+replace_optional(
+    runtime_settings_shared_bundle,
+    """  "plugins-settings": {
+    id: `settings.nav.plugins-settings`,
+    defaultMessage: `Plugins`,
+    description: `Title for plugins settings section`,
+  },
+  connections: {""",
+    """  "plugins-settings": {
+    id: `settings.nav.plugins-settings`,
+    defaultMessage: `Plugins`,
+    description: `Title for plugins settings section`,
+  },
+  "skills-settings": {
+    id: `settings.nav.skills-settings`,
+    defaultMessage: `Skills`,
+    description: `Title for skills settings section`,
+  },
+  connections: {""",
+)
+replace_optional(
+    runtime_settings_shared_bundle,
+    """    case `mcp-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.mcp-settings`,
+        defaultMessage: `MCP servers`,
+        description: `Title for MCP servers settings section`,
+      });
+    case `connections`:""",
+    """    case `mcp-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.mcp-settings`,
+        defaultMessage: `MCP servers`,
+        description: `Title for MCP servers settings section`,
+      });
+    case `plugins-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.plugins-settings`,
+        defaultMessage: `Plugins`,
+        description: `Title for plugins settings section`,
+      });
+    case `connections`:""",
+)
+replace_optional(
+    runtime_settings_shared_bundle,
+    """    case `plugins-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.plugins-settings`,
+        defaultMessage: `Plugins`,
+        description: `Title for plugins settings section`,
+      });
+    case `connections`:""",
+    """    case `plugins-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.plugins-settings`,
+        defaultMessage: `Plugins`,
+        description: `Title for plugins settings section`,
+      });
+    case `skills-settings`:
+      return (0, u.jsx)(t, {
+        id: `settings.section.skills-settings`,
+        defaultMessage: `Skills`,
+        description: `Title for skills settings section`,
+      });
+    case `connections`:""",
+)
+
+runtime_plugins_page_bundle = next((root / "webview" / "assets").glob("plugins-page-*.js"), None)
+if runtime_plugins_page_bundle is None:
+    raise SystemExit("macOS dist patch failed: runtime plugins-page bundle not found")
+replace_optional(
+    runtime_plugins_page_bundle,
+    "function Cs(e){if(typeof e!=`object`||!e)return{initialTab:`skills`};let t=Reflect.get(e,`initialTab`),n=t===`skills`||t===`apps`||t===`mcps`?t:`skills`,",
+    "function Cs(e){if(typeof e!=`object`||!e)return{initialTab:`plugins`};let t=Reflect.get(e,`initialTab`),n=t===`skills`||t===`apps`||t===`mcps`||t===`plugins`?t:`plugins`,",
+)
+replace_optional(
+    runtime_plugins_page_bundle,
+    "t[47]!==a||t[48]!==s?(c=[s],t[47]=a,t[48]=s,t[49]=c):c=t[49];",
+    "t[47]!==a||t[48]!==s?(c=[a,s],t[47]=a,t[48]=s,t[49]=c):c=t[49];",
+)
+replace_optional(
+    runtime_plugins_page_bundle,
+    "t[20]!==u||t[21]!==f||t[22]!==m||t[23]!==g?(_=[f,m,g],t[20]=u,t[21]=f,t[22]=m,t[23]=g,t[24]=_):_=t[24];",
+    "t[20]!==u||t[21]!==f||t[22]!==m||t[23]!==g?(_=[u,f,m,g],t[20]=u,t[21]=f,t[22]=m,t[23]=g,t[24]=_):_=t[24];",
 )
 
 runtime_font_settings_bundle = next((root / "webview" / "assets").glob("font-settings-*.js"), None)
@@ -526,6 +658,33 @@ replace_optional(
 runtime_local_models_bundle = next((root / "webview" / "assets").glob("local-models-settings-*.js"), None)
 if runtime_local_models_bundle is None:
     raise SystemExit("macOS dist patch failed: runtime local-models settings bundle not found")
+
+def flatten_configuration_provider_tile(path: Path, error_message: str) -> None:
+    text = path.read_text()
+    provider = text.find("label: `Provider`,")
+    if provider < 0:
+        raise SystemExit(error_message)
+    tile_start = "(0, m.jsxs)(TileGroup, {\n                position: `top`,"
+    flat_start = "(0, m.jsxs)(`div`, {\n                className: `flex flex-col`,"
+    start = text.rfind(tile_start, 0, provider)
+    if start >= 0:
+        text = text[:start] + flat_start + text[start + len(tile_start):]
+    elif text.rfind(flat_start, 0, provider) < 0:
+        raise SystemExit(error_message)
+    middle_group = "(0, m.jsxs)(TileGroup, {\n                position: `middle`,"
+    top_group = "(0, m.jsxs)(TileGroup, {\n                position: `top`,"
+    next_group = text.find(middle_group, provider)
+    if next_group >= 0:
+        text = text[:next_group] + top_group + text[next_group + len(middle_group):]
+    elif text.find(top_group, provider) < 0:
+        raise SystemExit(error_message)
+    path.write_text(text)
+
+flatten_configuration_provider_tile(
+    runtime_local_models_bundle,
+    "macOS dist patch failed: configuration provider tile snippet not found",
+)
+
 replace_optional(
     runtime_local_models_bundle,
     """import { i as q, n as H, t as R } from "./check-md-YtZX6wSV.js";
@@ -554,6 +713,51 @@ function mergeManagedRemoteSessionConnections(e, t) {
   let n = Array.isArray(e) ? e : [];
   return [...n.filter((e) => e.hostId !== t.hostId && e.connectionType !== ee), t];
 }""",
+)
+if "function publishLocalLlmConsoleProvider" not in runtime_local_models_bundle.read_text():
+    replace_optional(
+        runtime_local_models_bundle,
+        """function L(e) {
+      return JSON.stringify(e);
+    }""",
+        """function publishLocalLlmConsoleProvider(e) {
+      let t = z(e);
+      if (typeof window == `undefined`) return t;
+      try {
+        window.__localLLMConsoleProvider = t;
+        window.sessionStorage?.setItem(`local-llm-console-provider`, t);
+        window.localStorage?.setItem(`local-llm-console-provider`, t);
+        window.dispatchEvent(
+          new CustomEvent(`local-llm-console-provider-changed`, {
+            detail: { provider: t },
+          }),
+        );
+      } catch {}
+      return t;
+    }
+
+    function L(e) {
+      return JSON.stringify(e);
+    }""",
+    )
+replace_optional(
+    runtime_local_models_bundle,
+    """  (0, p.useEffect)(() => {
+    E(ye);
+    U((e) => (e != null && e.tone === `success` ? e : null));
+    oe(null);
+  }, [L(ye)]);""",
+    """  (0, p.useEffect)(() => {
+    E(ye);
+    publishLocalLlmConsoleProvider(ye.provider);
+    U((e) => (e != null && e.tone === `success` ? e : null));
+    oe(null);
+  }, [L(ye)]);""",
+)
+replace_optional(
+    runtime_local_models_bundle,
+    "let n = z(e);",
+    "let n = publishLocalLlmConsoleProvider(e);",
 )
 ensure_text_contains(
     runtime_local_models_bundle,

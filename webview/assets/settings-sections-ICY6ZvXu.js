@@ -10,6 +10,8 @@ var e = `general-settings`,
     { slug: `usage` },
     { slug: `computer-use` },
     { slug: `mcp-settings` },
+    { slug: `plugins-settings` },
+    { slug: `skills-settings` },
     { slug: `data-controls` },
     { slug: `appearance` },
   ];
